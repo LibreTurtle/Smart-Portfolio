@@ -76,7 +76,7 @@
             <groupId>com.stripe</groupId>
             <artifactId>stripe-java</artifactId>
             <version>31.3.0</version>
-            <scope>compile</scope>
+
         </dependency>
 
         <dependency>
