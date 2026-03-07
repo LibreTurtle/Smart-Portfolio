@@ -15,7 +15,7 @@ public class ContactMessageServiceImpl  implements ContactMessageService{
 
     private final ContactRepository repository;
     private final ContactMessageMapper mapper;
-    private final DiscordNotificationService discordNotificationService
+    private final DiscordNotificationService discordNotificationService;
 
     @Override
     public ContactMessageResponse submitMessage(ContactMessageRequest request) {

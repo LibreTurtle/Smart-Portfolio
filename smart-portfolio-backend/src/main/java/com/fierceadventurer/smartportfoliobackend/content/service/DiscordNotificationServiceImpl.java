@@ -2,8 +2,8 @@ package com.fierceadventurer.smartportfoliobackend.content.service;
 
 import com.fierceadventurer.smartportfoliobackend.content.dto.ContactMessageRequest;
 import lombok.RequiredArgsConstructor;
-import lombok.Value;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
@@ -17,7 +17,7 @@ public class DiscordNotificationServiceImpl implements DiscordNotificationServic
     private final RestClient restClient;
 
     public DiscordNotificationServiceImpl(
-            @Value("${portfolio.notication.discord.webhook-url}" String webhookUrl){
+            @Value("${portfolio.notification.discord.webhook-url:}") String webhookUrl){
                 this.webhookUrl = webhookUrl;
                 this.restClient = RestClient.create();
     }
