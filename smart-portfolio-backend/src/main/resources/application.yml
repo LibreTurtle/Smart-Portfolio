@@ -58,3 +58,20 @@ spring:
     cache-names: portfolio_projects, ai_responses
     caffeine:
       spec: maximumSize=100,expireAfterWrite=24h
+
+Portfolio:
+  notication:
+    discord:
+      webhook-url: ${DISCORD_WEBHOOK_URL}
+
+server:
+  port: 8080
+
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    operations-sorter: method
+    tags-sorter: alpha
