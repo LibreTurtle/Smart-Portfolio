@@ -1,4 +1,4 @@
-package com.fierceadventurer.smartportfoliobackend.content.repository;
+package com.fierceadventurer.smartportfoliobackend.content.service;
 
 import com.fierceadventurer.smartportfoliobackend.content.dto.ContactMessageRequest;
 
