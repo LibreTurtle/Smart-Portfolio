@@ -17,7 +17,7 @@ public class DiscordNotificationServiceImpl implements DiscordNotificationServic
     private final RestClient restClient;
 
     public DiscordNotificationServiceImpl(
-            @Value("${portfolio.notification.discord.webhook-url:}") String webhookUrl){
+            @Value("${portfolio.notification.discord.webhook-url}") String webhookUrl){
                 this.webhookUrl = webhookUrl;
                 this.restClient = RestClient.create();
     }

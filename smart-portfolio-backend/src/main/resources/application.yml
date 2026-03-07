@@ -59,8 +59,8 @@ spring:
     caffeine:
       spec: maximumSize=100,expireAfterWrite=24h
 
-Portfolio:
-  notication:
+portfolio:
+  notification:
     discord:
       webhook-url: ${DISCORD_WEBHOOK_URL}
 
