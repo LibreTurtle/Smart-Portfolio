@@ -1,4 +1,4 @@
-package com.fierceadventurer.smartportfoliobackend.ai;
+package com.fierceadventurer.smartportfoliobackend.ai.dto;
 
 import jakarta.validation.constraints.NotBlank;
 
