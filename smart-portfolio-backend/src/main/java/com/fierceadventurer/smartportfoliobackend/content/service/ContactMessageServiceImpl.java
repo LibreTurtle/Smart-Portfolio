@@ -15,6 +15,7 @@ public class ContactMessageServiceImpl  implements ContactMessageService{
 
     private final ContactRepository repository;
     private final ContactMessageMapper mapper;
+    private final DiscordNotificationService discordNotificationService
 
     @Override
     public ContactMessageResponse submitMessage(ContactMessageRequest request) {
@@ -23,6 +24,8 @@ public class ContactMessageServiceImpl  implements ContactMessageService{
         var entity = mapper.toEntity(request);
 
         var savedEntity = repository.save(entity);
+
+        discordNotificationService.sendContactNotification(request);
 
         return mapper.toResponse(savedEntity);
     }
