@@ -5,4 +5,5 @@ import org.springframework.ai.chat.model.ChatResponse;
 
 public interface HybridRagService {
     ChatResponse askQuestion(ChatRequest request);
+
 }
