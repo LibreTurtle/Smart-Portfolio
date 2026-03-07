@@ -1,12 +1,13 @@
 package com.fierceadventurer.smartportfoliobackend.content.controller;
 
+import com.fierceadventurer.smartportfoliobackend.content.dto.ProjectRequest;
 import com.fierceadventurer.smartportfoliobackend.content.dto.ProjectResponse;
 import com.fierceadventurer.smartportfoliobackend.content.service.ProjectService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
@@ -19,5 +20,11 @@ public class ProjectController {
     @GetMapping
     public ResponseEntity <List<ProjectResponse>> getAllProjects(){
         return ResponseEntity.ok(projectService.getAllProjects());
+    }
+
+    @PostMapping
+    public ResponseEntity<ProjectResponse> createProject(@Valid @RequestBody ProjectRequest request){
+        ProjectResponse response = projectService.createProject(request);
+        return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
 }
