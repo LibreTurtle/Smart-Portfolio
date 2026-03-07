@@ -1,6 +1,6 @@
 package com.fierceadventurer.smartportfoliobackend.content.service;
 
-import com.fierceadventurer.smartportfoliobackend.content.Repository.ProjectRepository;
+import com.fierceadventurer.smartportfoliobackend.content.repository.ProjectRepository;
 import com.fierceadventurer.smartportfoliobackend.content.dto.ProjectResponse;
 import com.fierceadventurer.smartportfoliobackend.content.mapper.ProjectMapper;
 import lombok.RequiredArgsConstructor;

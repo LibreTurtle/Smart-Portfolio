@@ -1,4 +1,4 @@
-package com.fierceadventurer.smartportfoliobackend.content.Repository;
+package com.fierceadventurer.smartportfoliobackend.content.repository;
 
 import com.fierceadventurer.smartportfoliobackend.content.entity.Project;
 import org.springframework.data.jpa.repository.JpaRepository;
