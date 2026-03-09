@@ -43,7 +43,7 @@ CREATE TABLE IF NOT EXISTS sponsors(
     amount DECIMAL(10 , 2) NOT NULL,
     currency VARCHAR(3) DEFAULT 'INR',
     status VARCHAR(50) DEFAULT 'PENDING',
-    stripe_session_id VARCHAR(255) UNIQUE,
+    razorpay_payment_id VARCHAR(255) UNIQUE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
