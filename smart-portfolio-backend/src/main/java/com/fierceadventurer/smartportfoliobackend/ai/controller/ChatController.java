@@ -20,5 +20,6 @@ public class ChatController {
     @PostMapping(produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public Flux<String> askQuestion(@Valid @RequestBody ChatRequest request){
         return hybridRagService.streamQuestion(request);
+
     }
 }
