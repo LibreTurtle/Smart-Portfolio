@@ -36,14 +36,14 @@ spring:
       image:
         enabled: false
       chat:
-        base-url: https://api.groq.com/openai/v1
+        base-url: https://api.groq.com/openai
         api-key: ${GROQ_API_KEY}
         options:
           model: llama-3.3-70b-versatile
           temperature: 0.3
 
       embedding:
-        base-url: https://api.jina.ai/v1
+        base-url: https://api.jina.ai
         api-key: ${JINA_API_KEY}
         options:
           model: jina-embeddings-v2-base-en
