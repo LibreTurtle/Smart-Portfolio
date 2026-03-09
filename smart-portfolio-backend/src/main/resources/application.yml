@@ -48,13 +48,13 @@ spring:
         options:
           model: jina-embeddings-v2-base-en
 
-  vectorstore:
-    pgvector:
-      table-name: resume_embeddings
-      initialize-schema: true
-      index-type: HNSW
-      distance-type: COSINE_DISTANCE
-      dimensions: 768
+    vectorstore:
+      pgvector:
+        table-name: resume_embeddings
+        initialize-schema: true
+        index-type: HNSW
+        distance-type: COSINE_DISTANCE
+        dimensions: 768
   cache:
     type: caffeine
     cache-names: portfolio_projects, ai_responses
