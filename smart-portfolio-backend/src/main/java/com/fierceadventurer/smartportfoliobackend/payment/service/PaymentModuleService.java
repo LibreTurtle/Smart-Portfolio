@@ -8,6 +8,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.UUID;
 
+import static org.springframework.web.servlet.function.RequestPredicates.param;
+
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -19,7 +21,7 @@ public class PaymentModuleService {
     public void processSuccessfulSponsorship(String razorpayEventId, String paymentId , String name , String email ,
                                              double amount, String currency){
 
-        UUID sponsorId = UUID.randomUUID();
+
         UUID eventId = UUID.randomUUID();
 
         log.info("Processing verified Razorpay payment. Initiating Outbox transaction for Sponsor: {}", email);
@@ -28,12 +30,20 @@ public class PaymentModuleService {
         String insertSponsorSql = """
                 INSERT INTO sponsors (id , sponsor_name, sponsor_email, amount , currency, status , razorpay_payment_id)
                 VALUES(?, ?, ?, ?, ?, 'SUCCESS', ?)
+                RETURNING id
                 """;
 
-        jdbcClient.sql(insertSponsorSql)
-                .params(sponsorId , name , email , amount , currency , paymentId)
-                .update();
+        // immediately grabbing UUID postgres generated
+        UUID generatedSponsorId = jdbcClient.sql(insertSponsorSql)
+                .param(name)
+                .param(email)
+                .param(amount)
+                .param(currency)
+                .param(paymentId)
+                .query(UUID.class)
+                .single();
 
+        // building json payload
         String payloadJson = String.format(
                 "{\"sponsorName\":\"%s\", \"amount\":%f, \"currency\":\"%s\", \"email\":\"%s\"}",
                 name, amount , currency , email
@@ -42,11 +52,13 @@ public class PaymentModuleService {
         // save to outbox events table (JSONB cast is critical for Postgres
         String insertOutboxSql = """
                 Insert INTO outbox_events(id , aggregate_type, aggregate_id, event_type, payload, is_Processed, event_id)
-                VALUES (?, 'SPONSOR', ?, 'SPONSOR_CREATED', ?::jsonb, 'PENDING')
+                VALUES (?, 'SPONSOR', ?, 'SPONSOR_CREATED', ?::jsonb, 'false', ?)
                 """;
 
         jdbcClient.sql(insertOutboxSql)
-                .params(eventId , sponsorId.toString(), payloadJson, razorpayEventId)
+                .param(generatedSponsorId.toString())
+                .param(payloadJson)
+                .param(razorpayEventId)
                 .update();
 
         log.info("Successfully committed Sponsor and OutboxEvent to PostgreSQL.");
