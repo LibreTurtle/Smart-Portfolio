@@ -1,14 +1,12 @@
 package com.fierceadventurer.smartportfoliobackend.ai.controller;
 
-import com.fierceadventurer.smartportfoliobackend.ai.dto.IngestionRequest;
 import com.fierceadventurer.smartportfoliobackend.ai.service.DataIngestionService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
 @RestController
 @RequiredArgsConstructor
@@ -16,10 +14,15 @@ import org.springframework.web.bind.annotation.RestController;
 public class DataIngestionController {
     private final DataIngestionService ingestionService;
 
-    @PostMapping
-    public ResponseEntity<String> ingestPortfolioData(@Valid @RequestBody IngestionRequest request){
-        ingestionService.ingestData(request.content());
-        return ResponseEntity.ok("Data successfully chunked, embedded, and saved to pgvector!");
+    @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<String> ingestPdfResume(@RequestParam("file") MultipartFile file){
+
+        if(file.isEmpty() || file.getOriginalFilename() == null || !file.getOriginalFilename().endsWith(".pdf")){
+            return ResponseEntity.badRequest().body("Please upload a valid .pdf file.");
+        }
+
+        ingestionService.ingestPdf(file);
+        return ResponseEntity.ok("PDF successfully parsed, chunked, embedded, and saved to pgvector!");
     }
 }
 
