@@ -22,11 +22,14 @@ public class DataIngestionServiceImpl implements DataIngestionService{
     public void ingestPdf(MultipartFile file) {
         log.info("Starting pdf ingestion process for file: {}", file.getOriginalFilename());
         try{
+            // file.getResource() converts the web upload into a format the PDF reader understands
             PagePdfDocumentReader pdfReader = new PagePdfDocumentReader(file.getResource());
 
+            // This extracts the text and creates one Spring AI Document per PDF page
             List<Document> extractedPages = pdfReader.get();
             log.info("Successfully extracted {} pages from the PDF.", extractedPages.size());
 
+            //A page is still too big for an AI prompt, so we chop it into overlapping chunks
             TokenTextSplitter splitter = new TokenTextSplitter();
             List<Document> chunkedDocuments = splitter.apply(extractedPages);
 

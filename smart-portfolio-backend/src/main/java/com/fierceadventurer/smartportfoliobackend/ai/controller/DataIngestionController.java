@@ -14,6 +14,7 @@ import org.springframework.web.multipart.MultipartFile;
 public class DataIngestionController {
     private final DataIngestionService ingestionService;
 
+    // The 'consumes' flag tells Swagger and the browser to expect a file upload
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<String> ingestPdfResume(@RequestParam("file") MultipartFile file){
 
