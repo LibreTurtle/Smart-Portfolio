@@ -25,22 +25,30 @@ public class DiscordNotificationServiceImpl implements DiscordNotificationServic
     @Async
     @Override
     public void sendContactNotification(ContactMessageRequest request) {
+        // Format a nice markdown message for Discord
+        String discordMessage = String.format(
+                "**New Portfolio Contact Message!**\n**Name:** %s\n**Email:** %s\n**Message:**\n```text\n%s\n```",
+                request.senderName(),
+                request.senderEmail(),
+                request.messageBody()
+        );
+
+        this.sendNotification(discordMessage);
+
+
+    }
+
+    @Override
+    public void sendNotification(String message) {
         if(webhookUrl == null || webhookUrl.isBlank()){
             log.warn("Discord webhook URL is not configured. Skipping notification.");
             return;
         }
-
         try {
-            // Format a nice markdown message for Discord
-            String discordMessage = String.format(
-                    "**New Portfolio Contact Message!**\n**Name:** %s\n**Email:** %s\n**Message:**\n```text\n%s\n```",
-                    request.senderName(),
-                    request.senderEmail(),
-                    request.messageBody()
-            );
+
 
             // Discord expects Json object with "content " field
-            Map<String , String> payload = Map.of("content", discordMessage);
+            Map<String , String> payload = Map.of("content", message);
 
             restClient.post()
                     .uri(webhookUrl)
@@ -48,16 +56,12 @@ public class DiscordNotificationServiceImpl implements DiscordNotificationServic
                     .retrieve()
                     .toBodilessEntity();
 
-            log.info("Successfully send async Discord notification for message from: {}", request.senderEmail());
+            log.info("Successfully send async Discord notification.");
         }
         catch (Exception e){
             log.error("Failed to send Discord Notification", e);
         }
     }
-
-
-
-
 
 
 }
