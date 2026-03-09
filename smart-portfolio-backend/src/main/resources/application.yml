@@ -62,6 +62,8 @@ spring:
       spec: maximumSize=100,expireAfterWrite=24h
 
 portfolio:
+  portfolio:
+    frontend-url: ${FRONTEND_URL}
   notification:
     discord:
       webhook-url: ${DISCORD_WEBHOOK_URL}
