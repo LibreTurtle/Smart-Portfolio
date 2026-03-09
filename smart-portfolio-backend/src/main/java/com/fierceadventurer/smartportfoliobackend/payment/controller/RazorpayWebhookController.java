@@ -16,7 +16,7 @@ import org.springframework.web.bind.annotation.*;
 
 @Slf4j
 @RestController
-@RequestMapping("api/webhooks/razorpay")
+@RequestMapping("/api/webhooks/razorpay")
 @RequiredArgsConstructor
 public class RazorpayWebhookController {
     private final PaymentModuleService paymentModuleService;
