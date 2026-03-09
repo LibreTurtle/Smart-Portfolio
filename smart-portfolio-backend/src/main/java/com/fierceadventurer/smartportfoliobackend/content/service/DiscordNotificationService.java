@@ -4,4 +4,6 @@ import com.fierceadventurer.smartportfoliobackend.content.dto.ContactMessageRequ
 
 public interface DiscordNotificationService {
     void sendContactNotification(ContactMessageRequest request);
+
+    void sendNotification(String message);
 }
