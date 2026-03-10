@@ -22,9 +22,5 @@ public class ProjectController {
         return ResponseEntity.ok(projectService.getAllProjects());
     }
 
-    @PostMapping
-    public ResponseEntity<ProjectResponse> createProject(@Valid @RequestBody ProjectRequest request){
-        ProjectResponse response = projectService.createProject(request);
-        return ResponseEntity.status(HttpStatus.CREATED).body(response);
-    }
+
 }
