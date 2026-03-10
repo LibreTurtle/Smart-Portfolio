@@ -15,13 +15,13 @@ public class AdminAuthInterceptor implements HandlerInterceptor {
     private String adminSecret;
 
     @Override
-    public boolean prehandle(HttpServletRequest request, HttpServletResponse response, Object handler) throws Exception{
+    public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) throws Exception{
         // cors preflight request is allowed
         if(request.getMethod().equalsIgnoreCase("OPTIONS")){
             return true;
         }
 
-        String providedSecret = request.getHeader("X-Admin_Secret");
+        String providedSecret = request.getHeader("X-Admin-Secret");
 
         if(providedSecret != null && providedSecret.equals(adminSecret)){
             return true;
