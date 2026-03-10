@@ -63,6 +63,7 @@ spring:
 
 portfolio:
   frontend-url: ${FRONTEND_URL}
+  admin-secret: ${ADMIN_SECRET}
   notification:
     discord:
       webhook-url: ${DISCORD_WEBHOOK_URL}
