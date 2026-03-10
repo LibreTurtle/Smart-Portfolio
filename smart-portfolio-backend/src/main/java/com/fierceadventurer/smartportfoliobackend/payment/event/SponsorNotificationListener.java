@@ -2,7 +2,7 @@ package com.fierceadventurer.smartportfoliobackend.payment.event;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fierceadventurer.smartportfoliobackend.content.service.DiscordNotificationServiceImpl;
+import com.fierceadventurer.smartportfoliobackend.content.service.DiscordNotificationService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.event.EventListener;
@@ -15,7 +15,7 @@ import org.springframework.stereotype.Component;
 public class SponsorNotificationListener {
 
     private final ObjectMapper objectMapper;
-    private final DiscordNotificationServiceImpl discordService;
+    private final DiscordNotificationService discordService;
 
     @Async
     @EventListener
