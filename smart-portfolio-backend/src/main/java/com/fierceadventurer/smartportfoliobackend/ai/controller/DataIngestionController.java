@@ -10,7 +10,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 @RestController
 @RequiredArgsConstructor
-@RequestMapping("/api/ingest")
+@RequestMapping("/api/admin/ingest")
 public class DataIngestionController {
     private final DataIngestionService ingestionService;
 
