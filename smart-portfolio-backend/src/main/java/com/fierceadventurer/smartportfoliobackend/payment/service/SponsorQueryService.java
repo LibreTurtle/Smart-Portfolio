@@ -12,7 +12,7 @@ import java.util.List;
 public class SponsorQueryService {
     private final JdbcClient jdbcClient;
 
-    public List<SponsorResponse> getRecentSponsor(){
+    public List<SponsorResponse> getRecentSponsors(){
         String sql = """
             SELECT sponsor_name AS sponsorName, amount, currency 
             FROM sponsors 
