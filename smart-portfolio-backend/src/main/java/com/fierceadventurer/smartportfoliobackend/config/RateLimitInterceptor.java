@@ -30,6 +30,7 @@ public class RateLimitInterceptor implements HandlerInterceptor {
         Refill refill = Refill.intervally(5 , Duration.ofMinutes(1));
         Bandwidth limit = Bandwidth.classic(5 , refill);
 
+
         return Bucket.builder()
                 .addLimit(limit)
                 .build();
@@ -55,7 +56,6 @@ public class RateLimitInterceptor implements HandlerInterceptor {
             response.setStatus(HttpStatus.TOO_MANY_REQUESTS.value());
             response.getWriter().write("Too many requests. Please wait a minute before asking another question.");
             return false;
-
         }
     }
 }
