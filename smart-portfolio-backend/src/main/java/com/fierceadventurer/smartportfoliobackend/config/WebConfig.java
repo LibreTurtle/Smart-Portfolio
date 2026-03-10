@@ -1,5 +1,6 @@
 package com.fierceadventurer.smartportfoliobackend.config;
 
+import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.servlet.config.annotation.CorsRegistry;
@@ -12,9 +13,11 @@ public class WebConfig implements WebMvcConfigurer{
     private String frontendUrl;
 
     private final RateLimitInterceptor rateLimitInterceptor;
+    private final AdminAuthInterceptor adminAuthInterceptor;
 
-    public WebConfig(RateLimitInterceptor rateLimitInterceptor) {
+    public WebConfig(RateLimitInterceptor rateLimitInterceptor, AdminAuthInterceptor adminAuthInterceptor) {
         this.rateLimitInterceptor = rateLimitInterceptor;
+        this.adminAuthInterceptor = adminAuthInterceptor;
     }
 
     @Override
@@ -22,7 +25,7 @@ public class WebConfig implements WebMvcConfigurer{
         registry.addMapping("/api/**")
                 .allowedOrigins(frontendUrl)
                 .allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
-                .allowedHeaders("*")
+                .allowedHeaders("*", "X-Admin-Secret")
                 .allowCredentials(true);
     }
 
@@ -30,5 +33,8 @@ public class WebConfig implements WebMvcConfigurer{
     public void addInterceptors(InterceptorRegistry registry){
         registry.addInterceptor(rateLimitInterceptor)
                 .addPathPatterns("/api/chat");
+
+        registry.addInterceptor(adminAuthInterceptor)
+                .addPathPatterns("/api/admin/**");
     }
 }
