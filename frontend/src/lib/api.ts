@@ -1,6 +1,12 @@
 import type {
   APIResponse,
   Project,
+  Profile,
+  Education,
+  Experience,
+  Certification,
+  Achievement,
+  Skill,
   WorkHighlights,
   ContactRequest,
   ContactMessageResponse,

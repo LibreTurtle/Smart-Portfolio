@@ -12,7 +12,7 @@
         </div>
         <p class="text-[11px] font-mono leading-relaxed text-muted-foreground uppercase">
           CONNECTED_TO: <span class="text-brand-orange">RESUME_DATA_CORE_V1</span><br/>
-          MODEL: GROQ_LLAMA_3_70B<br/>
+          MODEL: GROQ_GPT_OSS_20B<br/>
           STATUS: <span id="connection-status" class="text-brand-green">ONLINE_READY</span>
         </p>
         <div class="p-6 border border-border bg-card">
@@ -75,7 +75,7 @@
 </section>
 
 <style>
-  .streaming::after {
+  :global(.streaming::after) {
     content: "▋";
     animation: blink 1s step-end infinite;
     display: inline-block;
@@ -86,6 +86,86 @@
     vertical-align: middle;
   }
   @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+
+  :global(.chat-markdown) {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  :global(.chat-markdown > * + *) {
+    margin-top: 0.75rem;
+  }
+
+  :global(.chat-markdown h1),
+  :global(.chat-markdown h2),
+  :global(.chat-markdown h3) {
+    color: var(--foreground);
+    font-weight: 700;
+    line-height: 1.25;
+  }
+
+  :global(.chat-markdown h1) { font-size: 1rem; }
+  :global(.chat-markdown h2) { font-size: 0.95rem; }
+  :global(.chat-markdown h3) { font-size: 0.9rem; }
+
+  :global(.chat-markdown ul),
+  :global(.chat-markdown ol) {
+    padding-left: 1.25rem;
+  }
+
+  :global(.chat-markdown ul) { list-style: square; }
+  :global(.chat-markdown ol) { list-style: decimal; }
+
+  :global(.chat-markdown li + li) {
+    margin-top: 0.35rem;
+  }
+
+  :global(.chat-markdown code) {
+    border: 1px solid var(--border);
+    background: var(--card);
+    padding: 0.1rem 0.25rem;
+    color: #ff8c00;
+  }
+
+  :global(.chat-markdown pre) {
+    max-width: 100%;
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    background: var(--card);
+    padding: 0.75rem;
+  }
+
+  :global(.chat-markdown pre code) {
+    border: 0;
+    background: transparent;
+    padding: 0;
+    color: var(--foreground);
+  }
+
+  :global(.chat-markdown a),
+  :global(.resume-link-button) {
+    color: var(--accent);
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+
+  :global(.resume-link-button) {
+    display: inline-flex;
+    margin-top: 0.75rem;
+    border: 1px solid var(--border);
+    background: var(--foreground);
+    padding: 0.55rem 0.85rem;
+    color: var(--background);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.18em;
+    text-decoration: none;
+  }
+
+  :global(.resume-link-button:hover) {
+    background: var(--accent);
+    color: white;
+  }
 </style>
 
 <script>
@@ -101,6 +181,228 @@
     if (!form || !input || !messages || !submitBtn) return;
 
     let isStreaming = false;
+    let pendingResumeChallenge: { answer: string } | null = null;
+
+    function escapeHTML(value: string): string {
+      return value
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+    }
+
+    function renderInlineMarkdown(value: string): string {
+      let html = escapeHTML(value);
+      html = html.replace(/`([^`]+)`/g, "<code>$1</code>");
+      html = html.replace(/~~([^~]+)~~/g, "<del>$1</del>");
+      html = html.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+      html = html.replace(/__([^_]+)__/g, "<strong>$1</strong>");
+      html = html.replace(/\*([^*]+)\*/g, "<em>$1</em>");
+      html = html.replace(/_([^_]+)_/g, "<em>$1</em>");
+      html = html.replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+      return html;
+    }
+
+    function isTableSeparator(line: string): boolean {
+      const cells = line.trim().replace(/^\|/, "").replace(/\|$/, "").split("|");
+      return cells.length > 1 && cells.every((cell) => /^:?-{3,}:?$/.test(cell.trim()));
+    }
+
+    function isTableRow(line: string): boolean {
+      return line.includes("|") && line.trim().split("|").length > 2;
+    }
+
+    function splitTableRow(line: string): string[] {
+      return line.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map((cell) => cell.trim());
+    }
+
+    function renderTable(tableLines: string[]): string {
+      const header = splitTableRow(tableLines[0] ?? "");
+      const body = tableLines.slice(2).filter(isTableRow).map(splitTableRow);
+      const headHTML = header.map((cell) => `<th>${renderInlineMarkdown(cell)}</th>`).join("");
+      const bodyHTML = body.map((row) => {
+        const cells = header.map((_, index) => `<td>${renderInlineMarkdown(row[index] ?? "")}</td>`).join("");
+        return `<tr>${cells}</tr>`;
+      }).join("");
+      return `<div class="chat-table-wrap"><table><thead><tr>${headHTML}</tr></thead><tbody>${bodyHTML}</tbody></table></div>`;
+    }
+
+    function renderMarkdown(markdown: string): string {
+      const lines = markdown.trim().split("\n");
+      const html: string[] = [];
+      let listType: "ul" | "ol" | null = null;
+      let paragraph: string[] = [];
+      let codeBlock: string[] | null = null;
+
+      const closeParagraph = (): void => {
+        if (paragraph.length > 0) {
+          html.push(`<p>${paragraph.map(renderInlineMarkdown).join("<br/>")}</p>`);
+          paragraph = [];
+        }
+      };
+
+      const closeList = (): void => {
+        if (listType) {
+          html.push(`</${listType}>`);
+          listType = null;
+        }
+      };
+
+      for (let index = 0; index < lines.length; index += 1) {
+        const line = lines[index] ?? "";
+        const trimmed = line.trim();
+
+        if (codeBlock) {
+          if (trimmed.startsWith("```")) {
+            html.push(`<pre><code>${escapeHTML(codeBlock.join("\n"))}</code></pre>`);
+            codeBlock = null;
+          } else {
+            codeBlock.push(line);
+          }
+          continue;
+        }
+
+        if (trimmed === "") {
+          closeParagraph();
+          closeList();
+          continue;
+        }
+
+        if (/^(-{3,}|\*{3,}|_{3,})$/.test(trimmed)) {
+          closeParagraph();
+          closeList();
+          html.push("<hr/>");
+          continue;
+        }
+
+        if (trimmed.startsWith("```")) {
+          closeParagraph();
+          closeList();
+          codeBlock = [];
+          continue;
+        }
+
+        if (/^#{1,3}\s+/.test(trimmed)) {
+          closeParagraph();
+          closeList();
+          const level = Math.min(trimmed.match(/^#+/)?.[0].length ?? 3, 3);
+          html.push(`<h${level}>${renderInlineMarkdown(trimmed.replace(/^#{1,3}\s+/, ""))}</h${level}>`);
+          continue;
+        }
+
+        if (trimmed.startsWith(">")) {
+          closeParagraph();
+          closeList();
+          const quoteLines = [trimmed.replace(/^>\s?/, "")];
+          let nextIndex = index + 1;
+          while (nextIndex < lines.length && lines[nextIndex]?.trim().startsWith(">")) {
+            quoteLines.push(lines[nextIndex]!.trim().replace(/^>\s?/, ""));
+            nextIndex += 1;
+          }
+          index = nextIndex - 1;
+          html.push(`<blockquote>${renderMarkdown(quoteLines.join("\n"))}</blockquote>`);
+          continue;
+        }
+
+        const nextLine = lines[index + 1] ?? "";
+        if (isTableRow(line) && isTableSeparator(nextLine)) {
+          closeParagraph();
+          closeList();
+          const tableLines = [line, nextLine];
+          let nextIndex = index + 2;
+          while (nextIndex < lines.length && isTableRow(lines[nextIndex] ?? "")) {
+            tableLines.push(lines[nextIndex]!);
+            nextIndex += 1;
+          }
+          index = nextIndex - 1;
+          html.push(renderTable(tableLines));
+          continue;
+        }
+
+        if (/^\s*[-*]\s+/.test(line)) {
+          closeParagraph();
+          if (listType !== "ul") {
+            closeList();
+            html.push("<ul>");
+            listType = "ul";
+          }
+          html.push(`<li>${renderInlineMarkdown(line.replace(/^\s*[-*]\s+/, ""))}</li>`);
+          continue;
+        }
+
+        if (/^\s*\d+\.\s+/.test(line)) {
+          closeParagraph();
+          if (listType !== "ol") {
+            closeList();
+            html.push("<ol>");
+            listType = "ol";
+          }
+          html.push(`<li>${renderInlineMarkdown(line.replace(/^\s*\d+\.\s+/, ""))}</li>`);
+          continue;
+        }
+
+        closeList();
+        paragraph.push(line);
+      }
+
+      if (codeBlock) {
+        html.push(`<pre><code>${escapeHTML(codeBlock.join("\n"))}</code></pre>`);
+      }
+      closeParagraph();
+      closeList();
+      return html.join("");
+    }
+
+    function setBotMarkdown(el: HTMLElement, text: string): void {
+      el.classList.add("chat-markdown");
+      el.innerHTML = renderMarkdown(sanitizePublicText(text));
+    }
+
+    function sanitizePublicText(text: string): string {
+      return text.replace(/(?:\+?\d[\d\s().-]{8,}\d)/g, "[phone number withheld]");
+    }
+
+    function wantsResume(text: string): boolean {
+      return /\b(resume|cv|curriculum\s+vitae)\b/i.test(text);
+    }
+
+    function createResumeChallenge(): { prompt: string; answer: string } {
+      const a = 4 + Math.floor(Math.random() * 6);
+      const b = 2 + Math.floor(Math.random() * 7);
+      return {
+        prompt: `HUMAN_VERIFICATION_REQUIRED. To view the resume, answer this: **${a} + ${b} = ?**`,
+        answer: String(a + b),
+      };
+    }
+
+    function showResumeChoices(): HTMLElement | null {
+      const botContent = addMessage("BOT", "");
+      if (!botContent) return null;
+      setBotMarkdown(botContent, "VERIFICATION_CONFIRMED. Choose an option.");
+      const actions = document.createElement("div");
+      actions.className = "mt-3 flex flex-wrap gap-3";
+      const anchor = document.createElement("a");
+      anchor.href = apiUrl("/api/resume");
+      anchor.target = "_blank";
+      anchor.rel = "noopener noreferrer";
+      anchor.className = "resume-action-button resume-action-button-primary";
+      anchor.textContent = "VIEW_RESUME";
+      const cancel = document.createElement("button");
+      cancel.type = "button";
+      cancel.className = "resume-action-button resume-action-button-danger";
+      cancel.textContent = "NOT_IN_MOOD";
+      cancel.addEventListener("click", () => {
+        botContent.parentElement?.remove();
+        messages!.scrollTop = messages!.scrollHeight;
+        input!.focus();
+      });
+      actions.appendChild(anchor);
+      actions.appendChild(cancel);
+      botContent.appendChild(actions);
+      messages!.scrollTop = messages!.scrollHeight;
+      return botContent;
+    }
 
     // Validation logic for hover effect
     submitBtn.addEventListener("mouseenter", () => {
@@ -124,7 +426,7 @@
       roleTag.textContent = `[${role}]`;
       
       const content = document.createElement("div");
-      content.className = `text-sm font-mono leading-relaxed max-w-xl whitespace-pre-wrap ${role === 'USR' ? 'text-muted-foreground' : 'text-foreground'}`;
+      content.className = `text-sm font-mono leading-relaxed max-w-xl ${role === 'USR' ? 'text-muted-foreground whitespace-pre-wrap' : 'text-foreground chat-markdown'}`;
       content.textContent = text;
       
       wrapper.appendChild(roleTag);
@@ -144,6 +446,29 @@
 
       addMessage("USR", question.toUpperCase());
       input!.value = "";
+
+      if (pendingResumeChallenge) {
+        const expected = pendingResumeChallenge.answer;
+        pendingResumeChallenge = null;
+        if (question.replace(/\D/g, "") === expected) {
+          showResumeChoices();
+        } else {
+          const botContent = addMessage("BOT", "");
+          if (botContent) setBotMarkdown(botContent, "VERIFICATION_FAILED. Ask for the resume again to restart the check.");
+        }
+        input!.focus();
+        return;
+      }
+
+      if (wantsResume(question)) {
+        const challenge = createResumeChallenge();
+        pendingResumeChallenge = { answer: challenge.answer };
+        const botContent = addMessage("BOT", "");
+        if (botContent) setBotMarkdown(botContent, challenge.prompt);
+        input!.focus();
+        return;
+      }
+
       isStreaming = true;
       submitBtn!.disabled = true;
       submitBtn!.textContent = "WAIT...";
@@ -187,7 +512,7 @@
               // Unescape "\\n" sequence sent by the backend.
               text = text.replace(/\\n/g, '\n');
               fullText += text;
-              botContent.textContent = fullText;
+              setBotMarkdown(botContent, fullText);
               messages!.scrollTop = messages!.scrollHeight;
             }
           }

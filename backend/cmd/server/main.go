@@ -3,8 +3,10 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -122,11 +124,28 @@ func main() {
 	}
 
 	semanticCacheRepo := airepository.NewSemanticCacheRepository(pg.Pool)
-	vectorStoreRepo := airepository.NewVectorStoreRepository(pg.Pool, cfg.Embedding.Dimensions)
-	githubEmbeddingRepo := airepository.NewGitHubEmbeddingRepository(pg.Pool, cfg.Embedding.Dimensions)
+	ingestionManifestRepo := airepository.NewIngestionManifestRepository(pg.Pool)
+	vectorStoreRepo, err := airepository.NewVectorStoreRepository(cfg.Vector, cfg.Embedding.Dimensions)
+	if err != nil {
+		log.Fatal().Err(err).Msg("failed to initialize vector store")
+	}
+	if err := vectorStoreRepo.Ensure(rootCtx); err != nil {
+		log.Fatal().Err(err).Msg("failed to ensure vector store")
+	}
+	githubEmbeddingRepo, err := airepository.NewGitHubEmbeddingRepository(cfg.Vector, cfg.Embedding.Dimensions)
+	if err != nil {
+		log.Fatal().Err(err).Msg("failed to initialize GitHub vector store")
+	}
 
 	ragSvc := aiservice.NewRAGService(embeddingSvc, semanticCacheRepo, vectorStoreRepo, cfg.AI)
-	ingestionSvc := aiservice.NewIngestionService(embeddingSvc, vectorStoreRepo)
+	ingestionSvc := aiservice.NewIngestionService(
+		embeddingSvc,
+		vectorStoreRepo,
+		ingestionManifestRepo,
+		cfg.Embedding.Model,
+		cfg.Vector.Provider,
+	)
+	seedProfileKnowledge(rootCtx, profileRepo, ingestionSvc)
 	githubSyncSvc := contentservice.NewGitHubSyncService(
 		cfg.GitHub,
 		githubProfileRepo,
@@ -211,14 +230,19 @@ func main() {
 	// ─────────────────────────────────────────────────────────────────────
 	// 12. Outbox poller (background goroutine)
 	// ─────────────────────────────────────────────────────────────────────
-	outboxPoller := worker.NewOutboxPoller(paymentRepo, bus, cfg.Outbox.PollInterval, 50)
-	outboxPoller.Start(rootCtx)
+	var outboxPoller *worker.OutboxPoller
+	if paymentSvc.Ready() {
+		outboxPoller = worker.NewOutboxPoller(paymentRepo, bus, cfg.Outbox.PollInterval, 50)
+		outboxPoller.Start(rootCtx)
+		log.Info().
+			Dur("interval", cfg.Outbox.PollInterval).
+			Msg("outbox poller: background worker started")
+	} else {
+		log.Warn().Msg("outbox poller: skipped — payment service is not fully configured")
+	}
+
 	githubSyncWorker := contentworker.NewGitHubSyncWorker(githubSyncSvc, cfg.GitHub.SyncInterval)
 	githubSyncWorker.Start(rootCtx)
-
-	log.Info().
-		Dur("interval", cfg.Outbox.PollInterval).
-		Msg("outbox poller: background worker started")
 
 	// ─────────────────────────────────────────────────────────────────────
 	// 13. HTTP server
@@ -271,8 +295,10 @@ func main() {
 	go func() {
 		defer close(shutdownDone)
 
-		outboxPoller.Stop()
-		log.Info().Msg("shutdown: outbox poller stopped")
+		if outboxPoller != nil {
+			outboxPoller.Stop()
+			log.Info().Msg("shutdown: outbox poller stopped")
+		}
 
 		bus.Shutdown()
 		log.Info().Msg("shutdown: event bus drained")
@@ -297,4 +323,112 @@ func main() {
 	}
 
 	log.Info().Msg("smart-portfolio: shutdown complete — goodbye!")
+}
+
+func seedProfileKnowledge(ctx context.Context, profileRepo *contentrepository.ProfileRepository, ingestionSvc aiservice.IngestionService) {
+	seedCtx, cancel := context.WithTimeout(ctx, 90*time.Second)
+	defer cancel()
+
+	var sections []string
+
+	if profile, err := profileRepo.GetProfile(seedCtx); err == nil && profile != nil {
+		sections = append(sections, fmt.Sprintf(
+			"Profile: %s %s. Role: %s. Specialization: %s. Location: %s. Summary: %s.",
+			profile.FirstName,
+			profile.LastName,
+			profile.PrimaryRole,
+			profile.Specialization,
+			profile.Location,
+			profile.Summary,
+		))
+	} else if err != nil {
+		log.Warn().Err(err).Msg("profile seed: profile data unavailable")
+	}
+
+	if education, err := profileRepo.GetEducation(seedCtx); err == nil {
+		for _, item := range education {
+			sections = append(sections, fmt.Sprintf(
+				"Education: %s, %s, %s, %s to %s, GPA %s. Coursework: %s.",
+				item.Institution,
+				item.Degree,
+				item.Location,
+				item.StartDate,
+				item.EndDate,
+				item.GPA,
+				item.Coursework,
+			))
+		}
+	} else {
+		log.Warn().Err(err).Msg("profile seed: education data unavailable")
+	}
+
+	if experience, err := profileRepo.GetExperience(seedCtx); err == nil {
+		for _, item := range experience {
+			sections = append(sections, fmt.Sprintf(
+				"Experience: %s as %s, %s, %s to %s. %s Tech stack: %s.",
+				item.Company,
+				item.Role,
+				item.Location,
+				item.StartDate,
+				item.EndDate,
+				item.Summary,
+				item.TechStack,
+			))
+		}
+	} else {
+		log.Warn().Err(err).Msg("profile seed: experience data unavailable")
+	}
+
+	if certifications, err := profileRepo.GetCertifications(seedCtx); err == nil {
+		for _, item := range certifications {
+			sections = append(sections, fmt.Sprintf(
+				"Certification: %s from %s, issued %s. URL: %s.",
+				item.Name,
+				item.Issuer,
+				item.IssueDate,
+				item.URL,
+			))
+		}
+	} else {
+		log.Warn().Err(err).Msg("profile seed: certification data unavailable")
+	}
+
+	if achievements, err := profileRepo.GetAchievements(seedCtx); err == nil {
+		for _, item := range achievements {
+			sections = append(sections, fmt.Sprintf(
+				"Achievement: %s, metric %s, date %s. %s.",
+				item.Title,
+				item.Metric,
+				item.Date,
+				item.Description,
+			))
+		}
+	} else {
+		log.Warn().Err(err).Msg("profile seed: achievement data unavailable")
+	}
+
+	if skills, err := profileRepo.GetSkills(seedCtx); err == nil {
+		grouped := make(map[string][]string)
+		for _, item := range skills {
+			grouped[item.Category] = append(grouped[item.Category], item.Name)
+		}
+		for category, names := range grouped {
+			sections = append(sections, fmt.Sprintf("Skills: %s: %s.", category, strings.Join(names, ", ")))
+		}
+	} else {
+		log.Warn().Err(err).Msg("profile seed: skills data unavailable")
+	}
+
+	text := strings.TrimSpace(strings.Join(sections, "\n\n"))
+	if text == "" {
+		log.Warn().Msg("profile seed: no structured profile text generated")
+		return
+	}
+
+	resp, err := ingestionSvc.IngestText(seedCtx, text, "structured-profile-seed")
+	if err != nil {
+		log.Warn().Err(err).Msg("profile seed: vector ingestion failed")
+		return
+	}
+	log.Info().Int("new_chunks", resp.Chunks).Msg("profile seed: vector store is initialized")
 }

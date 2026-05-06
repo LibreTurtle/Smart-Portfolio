@@ -15,6 +15,12 @@ CREATE TABLE IF NOT EXISTS profile (
     updated_at     TIMESTAMPTZ  NOT NULL DEFAULT now()
 );
 
+-- CLEANUP & CONSTRAINT: profile
+DELETE FROM profile a USING profile b WHERE a.id > b.id AND a.first_name = b.first_name AND a.last_name = b.last_name;
+DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'profile_name_key') THEN
+    ALTER TABLE profile ADD CONSTRAINT profile_name_key UNIQUE (first_name, last_name);
+END IF; END $$;
+
 -- =============================================================================
 -- Education
 -- =============================================================================
@@ -29,6 +35,12 @@ CREATE TABLE IF NOT EXISTS education (
     coursework  TEXT,
     created_at  TIMESTAMPTZ  NOT NULL DEFAULT now()
 );
+
+-- CLEANUP & CONSTRAINT: education
+DELETE FROM education a USING education b WHERE a.id > b.id AND a.institution = b.institution AND a.degree = b.degree;
+DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'education_key') THEN
+    ALTER TABLE education ADD CONSTRAINT education_key UNIQUE (institution, degree);
+END IF; END $$;
 
 -- =============================================================================
 -- Work Experience
@@ -45,6 +57,12 @@ CREATE TABLE IF NOT EXISTS experience (
     created_at  TIMESTAMPTZ  NOT NULL DEFAULT now()
 );
 
+-- CLEANUP & CONSTRAINT: experience
+DELETE FROM experience a USING experience b WHERE a.id > b.id AND a.company = b.company AND a.role = b.role;
+DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'experience_key') THEN
+    ALTER TABLE experience ADD CONSTRAINT experience_key UNIQUE (company, role);
+END IF; END $$;
+
 -- =============================================================================
 -- Certifications
 -- =============================================================================
@@ -56,6 +74,12 @@ CREATE TABLE IF NOT EXISTS certifications (
     url        VARCHAR(555),
     created_at TIMESTAMPTZ  NOT NULL DEFAULT now()
 );
+
+-- CLEANUP & CONSTRAINT: certifications
+DELETE FROM certifications a USING certifications b WHERE a.id > b.id AND a.name = b.name AND a.issuer = b.issuer;
+DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'certifications_key') THEN
+    ALTER TABLE certifications ADD CONSTRAINT certifications_key UNIQUE (name, issuer);
+END IF; END $$;
 
 -- =============================================================================
 -- Achievements
@@ -69,6 +93,12 @@ CREATE TABLE IF NOT EXISTS achievements (
     created_at  TIMESTAMPTZ  NOT NULL DEFAULT now()
 );
 
+-- CLEANUP & CONSTRAINT: achievements
+DELETE FROM achievements a USING achievements b WHERE a.id > b.id AND a.title = b.title;
+DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'achievements_title_key') THEN
+    ALTER TABLE achievements ADD CONSTRAINT achievements_title_key UNIQUE (title);
+END IF; END $$;
+
 -- =============================================================================
 -- Skills
 -- =============================================================================
@@ -79,6 +109,12 @@ CREATE TABLE IF NOT EXISTS skills (
     created_at TIMESTAMPTZ  NOT NULL DEFAULT now()
 );
 
+-- CLEANUP & CONSTRAINT: skills
+DELETE FROM skills a USING skills b WHERE a.id > b.id AND a.category = b.category AND a.name = b.name;
+DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'skills_key') THEN
+    ALTER TABLE skills ADD CONSTRAINT skills_key UNIQUE (category, name);
+END IF; END $$;
+
 -- =============================================================================
 -- SEED DATA
 -- =============================================================================
@@ -87,20 +123,20 @@ CREATE TABLE IF NOT EXISTS skills (
 INSERT INTO profile (first_name, last_name, primary_role, specialization, location, summary)
 VALUES ('Rishu', 'Kumar', 'BACKEND_DEV', 'JAVA_AI_RAG', 'Haridwar, Uttarakhand', 
 'Backend Developer specializing in Java, focused on building high-performance scalable systems and microservices architectures with AI integration.')
-ON CONFLICT DO NOTHING;
+ON CONFLICT (first_name, last_name) DO NOTHING;
 
 -- Education
 INSERT INTO education (institution, degree, location, start_date, end_date, gpa, coursework)
 VALUES ('Gurukula Kangri (Deemed to be University)', 'B.Tech, Computer Science and Engineering', 'Haridwar, Uttarakhand', 'Aug 2024', 'Present', '9.1 / 10.0', 
 'Data Structures & Algorithms, OOP, Discrete Mathematics, Web Development, Database Management Systems, Operating Systems, Computer Networks')
-ON CONFLICT DO NOTHING;
+ON CONFLICT (institution, degree) DO NOTHING;
 
 -- Experience
 INSERT INTO experience (company, role, location, start_date, end_date, summary, tech_stack)
 VALUES ('VLED — NPTEL Vinternship', 'MERN Stack Developer Intern', 'IIT Ropar, Punjab (Remote)', 'Jan 2026', 'Mar 2026', 
 'Contributed to open-source internship platforms, patched security vulnerabilities, and built RAG-powered AI tools for social impact.', 
 'React, Node.js, MongoDB, Gemini AI')
-ON CONFLICT DO NOTHING;
+ON CONFLICT (company, role) DO NOTHING;
 
 -- Projects (Manual ones not in GitHub)
 INSERT INTO projects (title, description, tech_stack, github_url, live_url)
@@ -115,21 +151,21 @@ VALUES
 'React 19, TypeScript, Node.js, Express, MongoDB, JWT, KaTeX', 
 'https://github.com/ZRishu/vi-notes', 
 'https://vi-notes-zr.vercel.app/')
-ON CONFLICT DO NOTHING;
+ON CONFLICT (title) DO NOTHING;
 
 -- Certifications
 INSERT INTO certifications (name, issuer, issue_date, url)
 VALUES 
 ('CS50x: Introduction to Computer Science', 'Harvard University / edX', 'Dec 2025', 'https://cs50.harvard.edu/certificates/30b59868-a373-40c2-9258-e1e95925bb23'),
 ('Spring Boot 3, Spring 6 & Hibernate for Beginners', 'Udemy', 'June 2025', 'https://ude.my/UC-608a60ac-4e84-4b25-adc3-5f6aa7ebe8b0')
-ON CONFLICT DO NOTHING;
+ON CONFLICT (name, issuer) DO NOTHING;
 
 -- Achievements
 INSERT INTO achievements (title, metric, description, date)
 VALUES 
 ('Ajrasakha Hackathon - Team AjraX', 'BEST_PROJECT', 'Recognized as one of the best projects for real-world impact on rural farmer welfare.', 'Feb 2026'),
 ('Open Source Contributions', 'VULN_PATCHES', 'Identified and patched watch-time bypass and rendering bugs in VLED platforms.', 'Jan-May 2026')
-ON CONFLICT DO NOTHING;
+ON CONFLICT (title) DO NOTHING;
 
 -- Skills
 INSERT INTO skills (category, name) VALUES 
@@ -140,4 +176,4 @@ INSERT INTO skills (category, name) VALUES
 ('Auth & Security', 'Keycloak'), ('Auth & Security', 'JWT'),
 ('AI / ML', 'Gemini AI'), ('AI / ML', 'LangChain'), ('AI / ML', 'RAG'),
 ('DevOps', 'Docker'), ('DevOps', 'Git')
-ON CONFLICT DO NOTHING;
+ON CONFLICT (category, name) DO NOTHING;

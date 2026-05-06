@@ -13,6 +13,21 @@ export interface Project {
   live_url?: string;
   created_at: string;
 }
+
+export interface WorkItem {
+  id: string;
+  title: string;
+  description: string;
+  tech_stack?: string;
+  github_url?: string;
+  live_url?: string;
+  source: "github" | "resume";
+  stars?: number;
+  is_pinned?: boolean;
+  updated_at?: string;
+  created_at: string;
+}
+
 export interface Profile {
   id: string;
   first_name: string;
@@ -65,10 +80,6 @@ export interface Skill {
   id: string;
   category: string;
   name: string;
-}
-
-  updated_at?: string;
-  created_at: string;
 }
 
 export interface GitHubProfile {

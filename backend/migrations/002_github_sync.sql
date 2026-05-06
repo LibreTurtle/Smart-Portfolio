@@ -1,5 +1,5 @@
 -- Smart Portfolio: GitHub works sync
--- Stores a compact GitHub-backed works catalog plus dedicated embeddings.
+-- Stores a compact GitHub-backed works catalog. Embeddings live in Pinecone.
 
 CREATE TABLE IF NOT EXISTS github_profiles (
     username            VARCHAR(255) PRIMARY KEY,
@@ -43,18 +43,3 @@ CREATE TABLE IF NOT EXISTS github_repositories (
 
 CREATE INDEX IF NOT EXISTS idx_github_repositories_username_rank
     ON github_repositories (username, is_pinned DESC, stars DESC, pushed_at DESC, github_updated_at DESC);
-
-CREATE TABLE IF NOT EXISTS github_embeddings (
-    entity_key      VARCHAR(255) PRIMARY KEY,
-    username        VARCHAR(255) NOT NULL,
-    entity_type     VARCHAR(50)  NOT NULL,
-    github_repo_id  BIGINT REFERENCES github_repositories (github_repo_id) ON DELETE CASCADE,
-    content         TEXT         NOT NULL,
-    embedding       VECTOR(768)  NOT NULL,
-    metadata        JSONB,
-    updated_at      TIMESTAMPTZ  NOT NULL DEFAULT now()
-);
-
-CREATE INDEX IF NOT EXISTS idx_github_embeddings_hnsw
-    ON github_embeddings
-    USING hnsw (embedding vector_cosine_ops);

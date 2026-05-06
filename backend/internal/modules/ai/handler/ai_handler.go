@@ -187,7 +187,7 @@ func (h *AIHandler) IngestPDF(w http.ResponseWriter, r *http.Request) {
 }
 
 // IngestText handles POST /api/ingest/text. It accepts a JSON body with raw
-// resume text that should be chunked, embedded, and stored in pgvector.
+// resume text that should be chunked, embedded, and stored in the vector store.
 func (h *AIHandler) IngestText(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Text       string `json:"text"`
@@ -234,10 +234,9 @@ func (h *AIHandler) IngestText(w http.ResponseWriter, r *http.Request) {
 	httputil.WriteJSON(w, http.StatusOK, resp)
 }
 
-// ClearVectorStore handles DELETE /api/ingest. It removes all document
-// embeddings from the resume_embeddings table, effectively wiping the RAG
-// knowledge base. This is intended to be called before re-ingesting a new
-// version of the resume.
+// ClearVectorStore handles DELETE /api/ingest. It removes all resume documents
+// from the configured vector store. This is intended to be called before
+// re-ingesting a new version of the resume.
 func (h *AIHandler) ClearVectorStore(w http.ResponseWriter, r *http.Request) {
 	// Consume and discard the body to prevent connection issues.
 	_, _ = io.Copy(io.Discard, r.Body)

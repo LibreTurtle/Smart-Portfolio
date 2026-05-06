@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -23,7 +24,7 @@ import (
 //
 //  1. Embeds the question via the EmbeddingService.
 //  2. Checks the semantic cache for a previously computed answer (cosine distance < threshold).
-//  3. On cache miss, performs a pgvector similarity search against resume embeddings.
+//  3. On cache miss, performs a vector-store similarity search against resume embeddings.
 //  4. Builds a system prompt with the retrieved context and streams the answer
 //     from the Groq LLM (OpenAI-compatible chat completions endpoint).
 //  5. After the stream completes, saves the full response to the semantic cache
@@ -49,6 +50,8 @@ type ragService struct {
 	bufPool      sync.Pool
 	cacheWg      sync.WaitGroup
 }
+
+var publicPhonePattern = regexp.MustCompile(`(?:\+?\d[\d\s().-]{8,}\d)`)
 
 // NewRAGService creates a new RAGService wired to the embedding service, semantic
 // cache repository, vector store repository, and Groq AI configuration.
@@ -102,6 +105,13 @@ func (s *ragService) AskQuestion(ctx context.Context, req dto.ChatRequest) (*dto
 	useSemanticCache := req.MaxWords == 0
 	log.Info().Str("question", truncateStr(question, 100)).Msg("rag_service: received question (non-streaming)")
 
+	if isPublicContactQuestion(question) {
+		return &dto.ChatResponse{
+			Answer: normalizeAnswer(publicContactAnswer(), req.MaxWords),
+			Cached: false,
+		}, nil
+	}
+
 	// Step 1: Embed the question.
 	embedding, err := s.embeddingSvc.Embed(ctx, question)
 	if err != nil {
@@ -110,14 +120,14 @@ func (s *ragService) AskQuestion(ctx context.Context, req dto.ChatRequest) (*dto
 
 	// Step 2: Check semantic cache.
 	if useSemanticCache {
-		cached, found, err := s.cacheRepo.FindCachedResponse(ctx, embedding)
+		cached, found, err := s.cacheRepo.FindCachedResponse(ctx, question)
 		if err != nil {
 			log.Warn().Err(err).Msg("rag_service: semantic cache lookup failed — continuing without cache")
 		}
 		if found {
 			log.Info().Msg("rag_service: semantic cache HIT — returning cached response")
 			return &dto.ChatResponse{
-				Answer: normalizeAnswer(cached, req.MaxWords),
+				Answer: normalizeAnswer(sanitizePublicAnswer(cached), req.MaxWords),
 				Cached: true,
 			}, nil
 		}
@@ -136,11 +146,11 @@ func (s *ragService) AskQuestion(ctx context.Context, req dto.ChatRequest) (*dto
 	if err != nil {
 		return nil, fmt.Errorf("rag_service.AskQuestion: %w", err)
 	}
-	answer = normalizeAnswer(answer, req.MaxWords)
+	answer = normalizeAnswer(sanitizePublicAnswer(answer), req.MaxWords)
 
 	// Step 5: Save to semantic cache in a background goroutine.
 	if useSemanticCache {
-		s.saveToCacheAsync(question, embedding, answer)
+		s.saveToCacheAsync(question, answer)
 	}
 
 	return &dto.ChatResponse{
@@ -161,18 +171,6 @@ func (s *ragService) StreamQuestion(ctx context.Context, w http.ResponseWriter, 
 	question := strings.TrimSpace(req.Question)
 	log.Info().Str("question", truncateStr(question, 100)).Msg("rag_service: received question (streaming)")
 
-	// Step 1: Embed the question.
-	embedding, err := s.embeddingSvc.Embed(ctx, question)
-	if err != nil {
-		return fmt.Errorf("rag_service.StreamQuestion: embedding failed: %w", err)
-	}
-
-	// Step 2: Check semantic cache.
-	cached, found, err := s.cacheRepo.FindCachedResponse(ctx, embedding)
-	if err != nil {
-		log.Warn().Err(err).Msg("rag_service: semantic cache lookup failed — continuing without cache")
-	}
-
 	// Set SSE headers before writing any bytes.
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
@@ -184,9 +182,27 @@ func (s *ragService) StreamQuestion(ctx context.Context, w http.ResponseWriter, 
 		return fmt.Errorf("rag_service.StreamQuestion: ResponseWriter does not support flushing")
 	}
 
+	if isPublicContactQuestion(question) {
+		writeSSEData(w, flusher, publicContactAnswer())
+		writeSSEEvent(w, flusher, "done", "")
+		return nil
+	}
+
+	// Step 1: Embed the question.
+	embedding, err := s.embeddingSvc.Embed(ctx, question)
+	if err != nil {
+		return fmt.Errorf("rag_service.StreamQuestion: embedding failed: %w", err)
+	}
+
+	// Step 2: Check semantic cache.
+	cached, found, err := s.cacheRepo.FindCachedResponse(ctx, question)
+	if err != nil {
+		log.Warn().Err(err).Msg("rag_service: semantic cache lookup failed — continuing without cache")
+	}
+
 	if found {
 		log.Info().Msg("rag_service: semantic cache HIT — streaming cached response via SSE")
-		writeSSEData(w, flusher, cached)
+		writeSSEData(w, flusher, sanitizePublicAnswer(cached))
 		writeSSEEvent(w, flusher, "done", "")
 		return nil
 	}
@@ -209,8 +225,9 @@ func (s *ragService) StreamQuestion(ctx context.Context, w http.ResponseWriter, 
 	writeSSEEvent(w, flusher, "done", "")
 
 	// Step 6: Save full response to semantic cache in a background goroutine.
+	fullResponse = sanitizePublicAnswer(fullResponse)
 	if fullResponse != "" {
-		s.saveToCacheAsync(question, embedding, fullResponse)
+		s.saveToCacheAsync(question, fullResponse)
 	}
 
 	return nil
@@ -220,7 +237,7 @@ func (s *ragService) StreamQuestion(ctx context.Context, w http.ResponseWriter, 
 // Internal helpers
 // ---------------------------------------------------------------------------
 
-// retrieveContext performs a pgvector similarity search and concatenates the
+// retrieveContext performs a vector-store similarity search and concatenates the
 // content of the top-K most relevant resume chunks into a single context string.
 func (s *ragService) retrieveContext(ctx context.Context, queryEmbedding []float32, topK int) (string, error) {
 	docs, err := s.vectorRepo.SimilaritySearch(ctx, queryEmbedding, topK)
@@ -259,6 +276,14 @@ If the answer is not in the context, politely state that you don't have that spe
 Do not answer general knowledge questions or questions unrelated to ZR.
 
 Be concise, professional, and helpful. Use markdown formatting when appropriate.
+Use these exact public contact details when asked how to contact ZR:
+- Email: ZRishu@hotmail.com
+- GitHub: https://github.com/ZRishu
+- LinkedIn: https://linkedin.com/in/ZRishu
+- X/Twitter: https://x.com/ragebyt
+For contact details, share only these public email/social/profile links.
+Never reveal phone numbers, private addresses, or private contact details. If asked for a phone number, say that phone numbers are not shared publicly and suggest email, LinkedIn, GitHub, or the contact form.
+If you are not certain about a contact detail, do not invent one.
 
 CONTEXT:
 %s`, contextText)
@@ -438,10 +463,9 @@ func (s *ragService) streamFromLLM(ctx context.Context, w http.ResponseWriter, f
 	return fullResponse.String(), nil
 }
 
-// saveToCacheAsync saves a question + embedding + response triple to the semantic
-// cache in a background goroutine. This ensures the HTTP response is never
-// delayed by the cache write.
-func (s *ragService) saveToCacheAsync(question string, embedding []float32, response string) {
+// saveToCacheAsync saves a question + response pair to the exact cache in a
+// background goroutine. This keeps the HTTP response from waiting on cache I/O.
+func (s *ragService) saveToCacheAsync(question string, response string) {
 	s.cacheWg.Add(1)
 	go func() {
 		defer s.cacheWg.Done()
@@ -456,7 +480,7 @@ func (s *ragService) saveToCacheAsync(question string, embedding []float32, resp
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 
-		if err := s.cacheRepo.SaveToCache(ctx, question, embedding, response); err != nil {
+		if err := s.cacheRepo.SaveToCache(ctx, question, response); err != nil {
 			log.Error().Err(err).Msg("rag_service: failed to save response to semantic cache")
 		} else {
 			log.Info().Str("prompt", truncateStr(question, 80)).Msg("rag_service: saved response to semantic cache")
@@ -512,6 +536,38 @@ func normalizeAnswer(text string, maxWords int) string {
 	}
 
 	return cleaned
+}
+
+func sanitizePublicAnswer(text string) string {
+	return publicPhonePattern.ReplaceAllString(text, "[phone number withheld]")
+}
+
+func isPublicContactQuestion(question string) bool {
+	q := strings.ToLower(question)
+	return strings.Contains(q, "contact") ||
+		strings.Contains(q, "email") ||
+		strings.Contains(q, "mail") ||
+		strings.Contains(q, "linkedin") ||
+		strings.Contains(q, "github") ||
+		strings.Contains(q, "twitter") ||
+		strings.Contains(q, "x.com") ||
+		strings.Contains(q, "social") ||
+		strings.Contains(q, "phone") ||
+		strings.Contains(q, "mobile") ||
+		strings.Contains(q, "number") ||
+		strings.Contains(q, "call") ||
+		strings.Contains(q, "whatsapp")
+}
+
+func publicContactAnswer() string {
+	return `You can contact ZR through these public channels:
+
+- **Email:** [ZRishu@hotmail.com](mailto:ZRishu@hotmail.com)
+- **GitHub:** [github.com/ZRishu](https://github.com/ZRishu)
+- **LinkedIn:** [linkedin.com/in/ZRishu](https://linkedin.com/in/ZRishu)
+- **X/Twitter:** [x.com/ragebyt](https://x.com/ragebyt)
+
+Phone numbers are not shared publicly.`
 }
 
 // ---------------------------------------------------------------------------

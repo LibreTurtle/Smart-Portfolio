@@ -105,22 +105,31 @@ func (d *DiscordNotificationService) SendContactNotification(ctx context.Context
 // sponsorship payment and sends it to Discord asynchronously.
 func (d *DiscordNotificationService) SendSponsorNotification(ctx context.Context, sponsorName, email, currency string, amount float64, paymentID, status string) {
 	msg := fmt.Sprintf(
-		"🎉 **NEW SPONSOR ALERT!** 🎉\n"+
-			"> **Name:** %s\n"+
+		"💸 **Portfolio Sponsorship Received**\n"+
+			"> **Sponsor:** %s\n"+
 			"> **Amount:** %.2f %s\n"+
 			"> **Email:** %s\n"+
-			"> **Payment ID:** %s\n"+
+			"> **Payment ID:** `%s`\n"+
 			"> **Status:** %s\n"+
-			"The outbox pipeline processed this payment successfully!",
+			"> **Processed:** %s\n\n"+
+			"Action: send a thank-you note or follow up from the sponsor dashboard.",
 		sponsorName,
 		amount,
 		currency,
-		email,
+		emptyFallback(email, "not provided"),
 		paymentID,
 		status,
+		time.Now().Format(time.RFC3339),
 	)
 
 	d.sendAsync(ctx, d.resolveWebhookURL("payment"), msg)
+}
+
+func emptyFallback(value, fallback string) string {
+	if value == "" {
+		return fallback
+	}
+	return value
 }
 
 // SendRaw sends an arbitrary string message to Discord asynchronously.

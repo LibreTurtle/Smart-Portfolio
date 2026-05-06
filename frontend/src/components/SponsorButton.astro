@@ -507,47 +507,117 @@
       text("receipt-message", receipt.message);
     };
 
-    const escapePdf = (value: string): string =>
+    const toPdfText = (value: string): string =>
       value
+        .replace(/[^\x20-\x7E]/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+
+    const escapePdf = (value: string): string =>
+      toPdfText(value)
         .replace(/\\/g, "\\\\")
         .replace(/\(/g, "\\(")
-        .replace(/\)/g, "\\)")
-        .replace(/\r?\n/g, " ");
+        .replace(/\)/g, "\\)");
+
+    const formatPdfMoney = (amount: number, currency: string): string =>
+      `${currency} ${amount.toLocaleString("en-IN", {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      })}`;
 
     const buildReceiptPdf = (receipt: ReceiptData): Blob => {
-      const lines: Array<[string, number, number, "F1" | "F2", number]> = [
-        ["ZR_SYSTEMS // PAYMENT_RECEIPT", 36, 752, "F2", 18],
-        ["Contribution confirmed for the smart portfolio platform.", 36, 730, "F1", 10],
-        [`Receipt: ${receipt.receipt_number}`, 36, 688, "F2", 12],
-        [`Issued: ${formatTimestamp(receipt.issued_at)}`, 320, 688, "F1", 11],
-        [`Paid by: ${receipt.sponsor_name}`, 36, 640, "F2", 12],
-        [`Email: ${receipt.sponsor_email || "Not provided"}`, 36, 620, "F1", 11],
-        [`Paid to: ${receipt.recipient_name}`, 320, 640, "F2", 12],
-        [`Role: ${receipt.recipient_role} / ${receipt.recipient_location}`, 320, 620, "F1", 11],
-        [`Amount: ${formatMoney(receipt.amount, receipt.currency)}`, 36, 566, "F2", 16],
-        [`Status: ${receipt.status}`, 320, 566, "F2", 14],
-        [`Order ID: ${receipt.razorpay_order_id}`, 36, 520, "F1", 10],
-        [`Payment ID: ${receipt.razorpay_payment_id}`, 36, 500, "F1", 10],
-        [receipt.message, 36, 450, "F1", 11],
-        ["Built with the same terminal visual language as the portfolio.", 36, 92, "F1", 10],
-      ];
+      const streamParts: string[] = [];
+      const color = {
+        bg: "0.035 0.038 0.047",
+        card: "0.075 0.078 0.09",
+        muted: "0.55 0.58 0.62",
+        border: "0.19 0.2 0.22",
+        text: "0.94 0.95 0.96",
+        green: "0 0.639 0.329",
+        orange: "0.96 0.47 0.16",
+        red: "0.86 0.15 0.18",
+      };
 
-      const streamParts = [
-        "0 0 0 rg 0 690 612 102 re f",
-        "1 1 1 rg 0 0 612 792 re f",
-        "0 0 0 rg 0 690 612 102 re f",
-        "1 0.549 0 rg 36 675 540 3 re f",
-        "0 0.639 0.329 rg 36 664 220 2 re f",
-        "0.09 0.09 0.11 rg 36 600 250 64 re f",
-        "0.09 0.09 0.11 rg 306 600 270 64 re f",
-        "0.09 0.09 0.11 rg 36 540 250 42 re f",
-        "0.09 0.09 0.11 rg 306 540 270 42 re f",
-        "0 0 0 RG 36 36 540 720 re S",
-      ];
+      const fillRect = (x: number, y: number, width: number, height: number, fill: string): void => {
+        streamParts.push(`${fill} rg ${x} ${y} ${width} ${height} re f`);
+      };
 
-      for (const [text, x, y, font, size] of lines) {
-        streamParts.push(`BT /${font} ${size} Tf 1 0 0 1 ${x} ${y} Tm (${escapePdf(text)}) Tj ET`);
-      }
+      const strokeRect = (x: number, y: number, width: number, height: number, stroke = color.border): void => {
+        streamParts.push(`${stroke} RG ${x} ${y} ${width} ${height} re S`);
+      };
+
+      const drawText = (text: string, x: number, y: number, font: "F1" | "F2", size: number, fill = color.text): void => {
+        streamParts.push(`${fill} rg BT /${font} ${size} Tf 1 0 0 1 ${x} ${y} Tm (${escapePdf(text)}) Tj ET`);
+      };
+
+      const drawWrappedText = (text: string, x: number, y: number, maxChars: number, lineHeight: number, font: "F1" | "F2", size: number, fill = color.text): number => {
+        const words = toPdfText(text).split(" ");
+        const lines: string[] = [];
+        let line = "";
+        for (const word of words) {
+          const next = line ? `${line} ${word}` : word;
+          if (next.length > maxChars && line) {
+            lines.push(line);
+            line = word;
+          } else {
+            line = next;
+          }
+        }
+        if (line) lines.push(line);
+        lines.slice(0, 4).forEach((row, index) => drawText(row, x, y - index * lineHeight, font, size, fill));
+        return y - Math.max(lines.length - 1, 0) * lineHeight;
+      };
+
+      const drawLabelValue = (label: string, value: string, x: number, y: number, width: number): void => {
+        fillRect(x, y - 56, width, 70, color.card);
+        strokeRect(x, y - 56, width, 70);
+        drawText(label, x + 14, y - 4, "F2", 8, color.muted);
+        drawWrappedText(value, x + 14, y - 23, width > 230 ? 31 : 24, 12, "F1", 10, color.text);
+      };
+
+      fillRect(0, 0, 612, 792, color.bg);
+      strokeRect(28, 28, 556, 736, color.border);
+      fillRect(28, 664, 556, 100, color.card);
+      fillRect(28, 660, 556, 4, color.orange);
+      fillRect(28, 654, 210, 3, color.green);
+      fillRect(44, 724, 9, 9, color.red);
+      fillRect(60, 724, 9, 9, color.orange);
+      fillRect(76, 724, 9, 9, color.green);
+      drawText("ZR_SYSTEMS", 44, 700, "F2", 26, color.text);
+      drawText("PAYMENT_RECEIPT // CONTRIBUTION_CONFIRMED", 44, 682, "F2", 10, color.muted);
+      drawText("THANK YOU FOR SPONSORING THE SMART PORTFOLIO PLATFORM", 296, 706, "F2", 9, color.green);
+      drawText(`STATUS: ${receipt.status.toUpperCase()}`, 432, 682, "F2", 10, color.green);
+
+      fillRect(44, 600, 524, 42, color.card);
+      strokeRect(44, 600, 524, 42);
+      drawText("RECEIPT_NO", 60, 624, "F2", 8, color.muted);
+      drawText(receipt.receipt_number, 60, 610, "F1", 11, color.text);
+      drawText("ISSUED_AT", 330, 624, "F2", 8, color.muted);
+      drawText(formatTimestamp(receipt.issued_at), 330, 610, "F1", 10, color.text);
+
+      drawLabelValue("PAID_BY", receipt.sponsor_name, 44, 560, 250);
+      drawLabelValue("SPONSOR_EMAIL", receipt.sponsor_email || "Not provided", 318, 560, 250);
+      drawLabelValue("PAID_TO", receipt.recipient_name, 44, 470, 250);
+      drawLabelValue("RECIPIENT_ROLE", `${receipt.recipient_role} / ${receipt.recipient_location}`, 318, 470, 250);
+
+      fillRect(44, 336, 524, 84, color.card);
+      strokeRect(44, 336, 524, 84);
+      drawText("CONTRIBUTION_AMOUNT", 64, 386, "F2", 9, color.muted);
+      drawText(formatPdfMoney(receipt.amount, receipt.currency), 64, 358, "F2", 24, color.green);
+      drawText("ONE_TIME_SUPPORT", 388, 386, "F2", 9, color.muted);
+      drawText("RAZORPAY_SECURE_CHECKOUT", 388, 366, "F2", 11, color.orange);
+
+      drawLabelValue("ORDER_ID", receipt.razorpay_order_id, 44, 292, 250);
+      drawLabelValue("PAYMENT_ID", receipt.razorpay_payment_id, 318, 292, 250);
+
+      fillRect(44, 144, 524, 88, color.card);
+      strokeRect(44, 144, 524, 88);
+      drawText("MESSAGE", 60, 206, "F2", 8, color.muted);
+      drawWrappedText(receipt.message, 60, 184, 70, 14, "F1", 11, color.text);
+
+      fillRect(44, 82, 524, 34, color.card);
+      strokeRect(44, 82, 524, 34);
+      drawText("THIS RECEIPT WAS GENERATED BY THE PORTFOLIO SPONSOR_PROTOCOL.", 60, 96, "F1", 9, color.muted);
 
       const stream = streamParts.join("\n");
       const objects = [

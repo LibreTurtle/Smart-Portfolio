@@ -16,9 +16,11 @@ type Config struct {
 	Database  DatabaseConfig
 	AI        AIConfig
 	Embedding EmbeddingConfig
+	Vector    VectorStoreConfig
 	GitHub    GitHubConfig
 	Discord   DiscordConfig
 	Razorpay  RazorpayConfig
+	Resume    ResumeConfig
 	Frontend  FrontendConfig
 	RateLimit RateLimitConfig
 	Outbox    OutboxConfig
@@ -51,6 +53,16 @@ type EmbeddingConfig struct {
 	Dimensions int
 }
 
+type VectorStoreConfig struct {
+	Provider         string
+	PineconeAPIKey   string
+	PineconeIndex    string
+	PineconeCloud    string
+	PineconeRegion   string
+	PineconeResumeNS string
+	PineconeGitHubNS string
+}
+
 type GitHubConfig struct {
 	Username       string
 	Token          string
@@ -70,6 +82,10 @@ type RazorpayConfig struct {
 	KeyID         string
 	KeySecret     string
 	WebhookSecret string
+}
+
+type ResumeConfig struct {
+	URL string
 }
 
 type FrontendConfig struct {
@@ -101,8 +117,10 @@ type AdminConfig struct {
 // Load reads the .env file (if present) and populates the Config struct.
 // It returns an error if any required variable is missing.
 func Load() (*Config, error) {
-	// Attempt to load .env; it's fine if the file doesn't exist (e.g. in prod).
-	_ = godotenv.Load()
+	// Attempt to load .env from current directory or backend/ directory.
+	if err := godotenv.Load(); err != nil {
+		_ = godotenv.Load("backend/.env")
+	}
 
 	cfg := &Config{}
 	var errs []string
@@ -111,7 +129,7 @@ func Load() (*Config, error) {
 	cfg.Server.Port = envOrDefault("PORT", envOrDefault("SERVER_PORT", "8080"))
 
 	// ── Database ─────────────────────────────────────────────────────────
-	cfg.Database.URL = envOrDefault("DATABASE_URL", "postgres://portfolio:portfolio_secret@localhost:5432/smart_portfolio?sslmode=disable")
+	cfg.Database.URL = requireEnv("DATABASE_URL", &errs)
 	cfg.Database.MaxOpenConns = envIntOrDefault("DB_MAX_OPEN_CONNS", 10)
 	cfg.Database.MaxIdleConns = envIntOrDefault("DB_MAX_IDLE_CONNS", 5)
 	cfg.Database.ConnMaxLifetime = time.Duration(envIntOrDefault("DB_CONN_MAX_LIFETIME_MIN", 30)) * time.Minute
@@ -127,6 +145,18 @@ func Load() (*Config, error) {
 	cfg.Embedding.BaseURL = envOrDefault("JINA_BASE_URL", "https://api.jina.ai/v1")
 	cfg.Embedding.Model = envOrDefault("EMBEDDING_MODEL", "jina-embeddings-v2-base-en")
 	cfg.Embedding.Dimensions = envIntOrDefault("EMBEDDING_DIMENSIONS", 768)
+
+	// ── Vector store (Pinecone) ──────────────────────────────────────────
+	cfg.Vector.Provider = strings.ToLower(envOrDefault("VECTOR_STORE_PROVIDER", "pinecone"))
+	cfg.Vector.PineconeAPIKey = envOrDefault("PINECONE_API_KEY", "")
+	cfg.Vector.PineconeIndex = envOrDefault("PINECONE_INDEX", "smart-portfolio")
+	cfg.Vector.PineconeCloud = envOrDefault("PINECONE_CLOUD", "aws")
+	cfg.Vector.PineconeRegion = envOrDefault("PINECONE_REGION", "us-east-1")
+	cfg.Vector.PineconeResumeNS = envOrDefault("PINECONE_NAMESPACE_RESUME", "resume")
+	cfg.Vector.PineconeGitHubNS = envOrDefault("PINECONE_NAMESPACE_GITHUB", "github")
+	if cfg.Vector.Provider == "pinecone" && cfg.Vector.PineconeAPIKey == "" {
+		errs = append(errs, "PINECONE_API_KEY")
+	}
 
 	// ── GitHub sync (optional) ──────────────────────────────────────────
 	cfg.GitHub.Username = envOrDefault("GITHUB_USERNAME", "")
@@ -145,6 +175,9 @@ func Load() (*Config, error) {
 	cfg.Razorpay.KeyID = envOrDefault("RAZORPAY_KEY_ID", "")
 	cfg.Razorpay.KeySecret = envOrDefault("RAZORPAY_KEY_SECRET", "")
 	cfg.Razorpay.WebhookSecret = envOrDefault("RAZORPAY_WEBHOOK_SECRET", "")
+
+	// ── Resume link ──────────────────────────────────────────────────────
+	cfg.Resume.URL = envOrDefault("RESUME_URL", "")
 
 	// ── Frontend ─────────────────────────────────────────────────────────
 	cfg.Frontend.URL = envOrDefault("FRONTEND_URL", "http://localhost:5173")

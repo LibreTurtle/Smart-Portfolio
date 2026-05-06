@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -117,6 +118,7 @@ type ModuleRoutes struct {
 //	  /chat                              → AIHandler.ChatRoutes()
 //	    POST /                           → ask question (JSON response)
 //	    POST /stream                     → ask question (SSE streaming)
+//	  /resume                            → redirect to configured resume URL
 //	  /ingest                            → AIHandler.IngestRoutes() [admin-auth]
 //	    POST /                           → upload PDF resume
 //	    POST /text                       → ingest raw text
@@ -175,6 +177,7 @@ func (s *Server) RegisterRoutes(m ModuleRoutes) {
 		if m.Chat != nil {
 			api.Mount("/chat", m.Chat)
 		}
+		api.Get("/resume", s.handleResumeRedirect)
 
 		// Payment webhook is secured by HMAC, not admin key
 		if m.RazorpayWebhook != nil {
@@ -207,6 +210,23 @@ func (s *Server) RegisterRoutes(m ModuleRoutes) {
 
 	// Log all registered routes at startup for debugging.
 	logRegisteredRoutes(r)
+}
+
+func (s *Server) handleResumeRedirect(w http.ResponseWriter, r *http.Request) {
+	resumeURL := strings.TrimSpace(s.cfg.Resume.URL)
+	if resumeURL == "" {
+		http.Error(w, "resume link is not configured", http.StatusNotFound)
+		return
+	}
+
+	parsed, err := url.Parse(resumeURL)
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" || (parsed.Scheme != "https" && parsed.Scheme != "http") {
+		log.Error().Str("resume_url", resumeURL).Msg("server: invalid resume URL configuration")
+		http.Error(w, "resume link is misconfigured", http.StatusInternalServerError)
+		return
+	}
+
+	http.Redirect(w, r, resumeURL, http.StatusFound)
 }
 
 // Start begins listening for HTTP connections. It blocks until the server is

@@ -2,6 +2,8 @@ package service
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"strings"
@@ -19,12 +21,12 @@ import (
 // ---------------------------------------------------------------------------
 
 // IngestionService handles the end-to-end pipeline for converting an uploaded
-// PDF resume into vector embeddings stored in pgvector. The pipeline is:
+// PDF resume into embeddings stored in the configured vector store. The pipeline is:
 //
 //  1. Extract raw text from the PDF.
 //  2. Split the text into overlapping chunks suitable for embedding.
 //  3. Generate embeddings for every chunk (in parallel batches).
-//  4. Store the chunks + embeddings in the resume_embeddings table (atomically).
+//  4. Upsert new chunks + embeddings into the vector store.
 //
 // The service is safe for concurrent use.
 type IngestionService interface {
@@ -72,21 +74,29 @@ const (
 // ---------------------------------------------------------------------------
 
 type ingestionService struct {
-	embeddingSvc EmbeddingService
-	vectorRepo   *repository.VectorStoreRepository
+	embeddingSvc   EmbeddingService
+	vectorRepo     *repository.VectorStoreRepository
+	manifestRepo   *repository.IngestionManifestRepository
+	embeddingModel string
+	vectorProvider string
 }
 
 // NewIngestionService creates a new IngestionService wired to the given
-// embedding service (for generating vectors) and vector store repository
-// (for persisting them to pgvector).
+// embedding service (for generating vectors) and vector store repository.
 func NewIngestionService(
 	embeddingSvc EmbeddingService,
 	vectorRepo *repository.VectorStoreRepository,
+	manifestRepo *repository.IngestionManifestRepository,
+	embeddingModel string,
+	vectorProvider string,
 ) IngestionService {
 	log.Info().Msg("ingestion_service: initialized")
 	return &ingestionService{
-		embeddingSvc: embeddingSvc,
-		vectorRepo:   vectorRepo,
+		embeddingSvc:   embeddingSvc,
+		vectorRepo:     vectorRepo,
+		manifestRepo:   manifestRepo,
+		embeddingModel: embeddingModel,
+		vectorProvider: vectorProvider,
 	}
 }
 
@@ -131,7 +141,7 @@ func (s *ingestionService) IngestPDF(ctx context.Context, reader io.Reader, file
 		Msg("ingestion_service: PDF ingestion complete")
 
 	return &dto.IngestResponse{
-		Message: fmt.Sprintf("PDF '%s' successfully parsed, chunked, embedded, and saved to pgvector.", fileName),
+		Message: fmt.Sprintf("PDF '%s' successfully parsed, chunked, embedded, and saved to the vector store.", fileName),
 		Pages:   pageCount,
 		Chunks:  chunks,
 	}, nil
@@ -164,7 +174,7 @@ func (s *ingestionService) IngestText(ctx context.Context, text string, sourceNa
 		Msg("ingestion_service: text ingestion complete")
 
 	return &dto.IngestResponse{
-		Message: fmt.Sprintf("Text from '%s' successfully chunked, embedded, and saved to pgvector.", sourceName),
+		Message: fmt.Sprintf("Text from '%s' successfully chunked, embedded, and saved to the vector store.", sourceName),
 		Pages:   0,
 		Chunks:  chunks,
 	}, nil
@@ -194,32 +204,90 @@ func (s *ingestionService) processAndStore(ctx context.Context, text, sourceName
 		return 0, fmt.Errorf("ingestion_service: text produced zero chunks after splitting")
 	}
 
+	docHash := contentHash(text)
+	var previousHash string
+	if s.manifestRepo != nil {
+		manifest, err := s.manifestRepo.Get(ctx, sourceName)
+		if err != nil {
+			return 0, fmt.Errorf("ingestion_service: failed to read ingestion manifest: %w", err)
+		}
+		if manifest != nil {
+			previousHash = manifest.DocumentHash
+			if manifest.DocumentHash == docHash &&
+				manifest.ChunkCount == len(chunks) &&
+				manifest.EmbeddingDimensions == s.embeddingSvc.Dimensions() &&
+				manifest.VectorProvider == s.vectorProvider {
+				log.Info().
+					Str("source", sourceName).
+					Str("document_hash", docHash).
+					Msg("ingestion_service: manifest unchanged, skipping ingestion")
+				return 0, nil
+			}
+		}
+	}
+
 	log.Info().
 		Str("source", sourceName).
+		Str("document_hash", docHash).
 		Int("chunks", len(chunks)).
 		Int("chunk_size", chunkSize).
 		Int("overlap", chunkOverlap).
 		Msg("ingestion_service: text split into chunks")
 
+	chunkIDs := make([]string, len(chunks))
+	for i, chunk := range chunks {
+		chunkIDs[i] = stableChunkID(sourceName, docHash, i, chunk)
+	}
+
+	existing, err := s.vectorRepo.ExistingIDs(ctx, chunkIDs)
+	if err != nil {
+		return 0, fmt.Errorf("ingestion_service: failed to check existing chunks: %w", err)
+	}
+
+	missingChunks := make([]string, 0, len(chunks))
+	missingIDs := make([]string, 0, len(chunks))
+	missingIndexes := make([]int, 0, len(chunks))
+	for i, chunk := range chunks {
+		if existing[chunkIDs[i]] {
+			continue
+		}
+		missingChunks = append(missingChunks, chunk)
+		missingIDs = append(missingIDs, chunkIDs[i])
+		missingIndexes = append(missingIndexes, i)
+	}
+
+	if len(missingChunks) == 0 {
+		log.Info().
+			Str("source", sourceName).
+			Str("document_hash", docHash).
+			Int("chunks", len(chunks)).
+			Msg("ingestion_service: all chunks already exist, skipping embedding")
+		return 0, nil
+	}
+
 	// Step 3: Generate embeddings for every chunk using concurrent batches.
-	embeddings, err := s.embedChunksConcurrently(ctx, chunks)
+	embeddings, err := s.embedChunksConcurrently(ctx, missingChunks)
 	if err != nil {
 		return 0, fmt.Errorf("ingestion_service: embedding generation failed: %w", err)
 	}
 
 	// Step 4: Build EmbeddingDocument slice and store atomically.
-	docs := make([]repository.EmbeddingDocument, len(chunks))
-	for i, chunk := range chunks {
+	docs := make([]repository.EmbeddingDocument, len(missingChunks))
+	for i, chunk := range missingChunks {
+		chunkIndex := missingIndexes[i]
 		metadata := map[string]string{
-			"source":       sourceName,
-			"chunk_index":  fmt.Sprintf("%d", i),
-			"total_chunks": fmt.Sprintf("%d", len(chunks)),
+			"source":        sourceName,
+			"document_hash": docHash,
+			"chunk_hash":    contentHash(chunk),
+			"chunk_index":   fmt.Sprintf("%d", chunkIndex),
+			"total_chunks":  fmt.Sprintf("%d", len(chunks)),
 		}
 		if pageCount > 0 {
 			metadata["total_pages"] = fmt.Sprintf("%d", pageCount)
 		}
 
 		docs[i] = repository.EmbeddingDocument{
+			ID:        missingIDs[i],
 			Content:   chunk,
 			Embedding: embeddings[i],
 			Metadata:  metadata,
@@ -230,7 +298,43 @@ func (s *ingestionService) processAndStore(ctx context.Context, text, sourceName
 		return 0, fmt.Errorf("ingestion_service: failed to store documents: %w", err)
 	}
 
+	if previousHash != "" && previousHash != docHash {
+		if err := s.vectorRepo.DeleteByMetadata(ctx, map[string]string{
+			"source":        sourceName,
+			"document_hash": previousHash,
+		}); err != nil {
+			log.Warn().
+				Err(err).
+				Str("source", sourceName).
+				Str("document_hash", previousHash).
+				Msg("ingestion_service: failed to prune previous document vectors")
+		}
+	}
+
+	if s.manifestRepo != nil {
+		if err := s.manifestRepo.Upsert(ctx, repository.IngestionManifest{
+			SourceName:          sourceName,
+			DocumentHash:        docHash,
+			ChunkCount:          len(chunks),
+			EmbeddingModel:      s.embeddingModel,
+			EmbeddingDimensions: s.embeddingSvc.Dimensions(),
+			VectorProvider:      s.vectorProvider,
+		}); err != nil {
+			return 0, fmt.Errorf("ingestion_service: failed to save ingestion manifest: %w", err)
+		}
+	}
+
 	return len(docs), nil
+}
+
+func stableChunkID(sourceName, documentHash string, index int, chunk string) string {
+	sourceHash := contentHash(strings.ToLower(strings.TrimSpace(sourceName)))
+	return fmt.Sprintf("resume:%s:%s:%04d:%s", sourceHash[:12], documentHash[:16], index, contentHash(chunk)[:16])
+}
+
+func contentHash(text string) string {
+	sum := sha256.Sum256([]byte(strings.Join(strings.Fields(strings.TrimSpace(text)), " ")))
+	return hex.EncodeToString(sum[:])
 }
 
 // ---------------------------------------------------------------------------

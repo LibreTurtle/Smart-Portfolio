@@ -92,7 +92,7 @@ func (s *projectService) GetWorkHighlights(ctx context.Context, githubUsername s
 		return nil, fmt.Errorf("project_service.GetWorkHighlights: %w", err)
 	}
 
-	items := make([]dto.WorkItemResponse, 0, len(manualProjects))
+	githubItems := make([]dto.WorkItemResponse, 0, githubLimit)
 	seenGitHubURLs := make(map[string]struct{})
 
 	if s.githubRepos != nil && s.githubUsers != nil && strings.TrimSpace(githubUsername) != "" {
@@ -103,7 +103,7 @@ func (s *projectService) GetWorkHighlights(ctx context.Context, githubUsername s
 		for _, repo := range repos {
 			githubURL := repo.GitHubURL
 			seenGitHubURLs[strings.ToLower(githubURL)] = struct{}{}
-			items = append(items, dto.WorkItemResponse{
+			githubItems = append(githubItems, dto.WorkItemResponse{
 				ID:          fmt.Sprintf("github:%d", repo.GitHubRepoID),
 				Title:       repo.Name,
 				Description: repo.Description,
@@ -119,6 +119,7 @@ func (s *projectService) GetWorkHighlights(ctx context.Context, githubUsername s
 		}
 	}
 
+	items := make([]dto.WorkItemResponse, 0, len(manualProjects)+len(githubItems))
 	for _, project := range manualProjects {
 		if project.GithubURL != nil {
 			if _, exists := seenGitHubURLs[strings.ToLower(strings.TrimSpace(*project.GithubURL))]; exists {
@@ -133,10 +134,11 @@ func (s *projectService) GetWorkHighlights(ctx context.Context, githubUsername s
 			TechStack:   project.TechStack,
 			GithubURL:   project.GithubURL,
 			LiveURL:     project.LiveURL,
-			Source:      "manual",
+			Source:      "resume",
 			CreatedAt:   project.CreatedAt,
 		})
 	}
+	items = append(items, githubItems...)
 
 	var githubProfile *dto.GitHubProfileResponse
 	if s.githubUsers != nil && strings.TrimSpace(githubUsername) != "" {

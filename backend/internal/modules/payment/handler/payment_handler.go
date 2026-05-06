@@ -81,7 +81,7 @@ func (h *PaymentHandler) VerifyPayment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	receipt, err := h.paymentService.VerifyCheckoutPayment(req)
+	receipt, err := h.paymentService.VerifyCheckoutPayment(r.Context(), req)
 	if err != nil {
 		if strings.Contains(err.Error(), "validation failed") {
 			httputil.WriteValidationError(w, err)

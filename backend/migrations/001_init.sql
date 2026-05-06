@@ -1,7 +1,6 @@
 -- Smart Portfolio: Initial Migration
 -- This script is idempotent — safe to run multiple times.
 
-CREATE EXTENSION IF NOT EXISTS vector;
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
 -- =============================================================================
@@ -16,6 +15,18 @@ CREATE TABLE IF NOT EXISTS projects (
     live_url   VARCHAR(255),
     created_at TIMESTAMPTZ  NOT NULL DEFAULT now()
 );
+
+-- CLEANUP: Delete duplicate projects keeping the oldest one
+DELETE FROM projects a USING projects b 
+WHERE a.id > b.id AND a.title = b.title;
+
+-- Ensure idempotency for constraint
+DO $$ 
+BEGIN 
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'projects_title_key') THEN
+        ALTER TABLE projects ADD CONSTRAINT projects_title_key UNIQUE (title);
+    END IF;
+END $$;
 
 -- =============================================================================
 -- Contact Messages
@@ -34,33 +45,31 @@ CREATE INDEX IF NOT EXISTS idx_contact_messages_unread
     WHERE is_read = FALSE;
 
 -- =============================================================================
--- Resume Embeddings (pgvector RAG store)
--- =============================================================================
-CREATE TABLE IF NOT EXISTS resume_embeddings (
-    id        UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    content   TEXT         NOT NULL,
-    embedding VECTOR(768)  NOT NULL,
-    metadata  JSONB
-);
-
-CREATE INDEX IF NOT EXISTS idx_resume_embeddings_hnsw
-    ON resume_embeddings
-    USING hnsw (embedding vector_cosine_ops);
-
--- =============================================================================
--- AI Semantic Cache
+-- AI Response Cache
 -- =============================================================================
 CREATE TABLE IF NOT EXISTS ai_semantic_cache (
     id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     prompt_text      TEXT         NOT NULL,
-    prompt_embedding VECTOR(768)  NOT NULL,
+    prompt_hash      VARCHAR(64)  NOT NULL UNIQUE,
     cached_response  TEXT         NOT NULL,
     created_at       TIMESTAMPTZ  NOT NULL DEFAULT now()
 );
 
-CREATE INDEX IF NOT EXISTS idx_ai_semantic_cache_hnsw
-    ON ai_semantic_cache
-    USING hnsw (prompt_embedding vector_cosine_ops);
+CREATE INDEX IF NOT EXISTS idx_ai_semantic_cache_created_at
+    ON ai_semantic_cache (created_at DESC);
+
+-- =============================================================================
+-- Vector Ingestion Manifests
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS vector_ingestion_manifests (
+    source_name          VARCHAR(255) PRIMARY KEY,
+    document_hash        VARCHAR(64)  NOT NULL,
+    chunk_count          INT          NOT NULL,
+    embedding_model      VARCHAR(255) NOT NULL,
+    embedding_dimensions INT          NOT NULL,
+    vector_provider      VARCHAR(50)  NOT NULL,
+    updated_at           TIMESTAMPTZ  NOT NULL DEFAULT now()
+);
 
 -- =============================================================================
 -- Sponsors (Razorpay payments)

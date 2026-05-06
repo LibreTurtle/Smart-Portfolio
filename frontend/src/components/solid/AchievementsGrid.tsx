@@ -42,14 +42,14 @@ export default function AchievementsGrid(props: AchievementsGridProps) {
     <div id="achievement-grid" class="app-scrollbar grid grid-cols-1 md:grid-cols-2 gap-px bg-border border border-border max-h-[22rem] overflow-y-auto">
       <For each={items()}>
         {(item) => (
-          <article class="bg-background p-6 md:p-7 flex flex-col justify-between min-h-56 space-y-8">
+          <article class="bg-background p-6 md:p-7 flex flex-col justify-between min-h-56 space-y-8 min-w-0">
             <div class="space-y-4">
-              <span class="text-[9px] font-mono text-brand-orange uppercase tracking-[0.2em]">{item.metric}</span>
-              <h4 class="text-base font-mono font-bold tracking-tight text-foreground">{item.title}</h4>
+              <span class="block text-[9px] font-mono text-brand-orange uppercase tracking-[0.14em] [overflow-wrap:anywhere]">{item.metric}</span>
+              <h4 class="text-base font-mono font-bold tracking-tight text-foreground [overflow-wrap:anywhere]">{item.title}</h4>
               <p class="text-[11px] leading-relaxed text-muted-foreground font-mono tracking-tight">{item.description}</p>
             </div>
             <div class="pt-4 border-t border-border">
-              <span class="text-[9px] font-mono text-brand-green uppercase tracking-[0.2em]">STATUS_CONFIRMED</span>
+              <span class="block text-[9px] font-mono text-brand-green uppercase tracking-[0.14em] [overflow-wrap:anywhere]">STATUS_CONFIRMED</span>
             </div>
           </article>
         )}

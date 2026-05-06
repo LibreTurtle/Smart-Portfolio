@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"math"
 	"net/http"
 	"strings"
@@ -42,11 +43,16 @@ type PaymentService interface {
 	// CreateRazorpayOrder creates a new order in Razorpay
 	CreateRazorpayOrder(req dto.CreateOrderRequest) (*dto.CreateOrderResponse, error)
 
-	// VerifyCheckoutPayment validates a client-side Razorpay checkout success payload.
-	VerifyCheckoutPayment(req dto.VerifyPaymentRequest) (*dto.PaymentReceiptResponse, error)
+	// VerifyCheckoutPayment validates a client-side Razorpay checkout success
+	// payload, records the sponsor idempotently, and queues the notification.
+	VerifyCheckoutPayment(ctx context.Context, req dto.VerifyPaymentRequest) (*dto.PaymentReceiptResponse, error)
 
 	// GetRecentSponsors fetches the top recent sponsors.
 	GetRecentSponsors(ctx context.Context) ([]model.Sponsor, error)
+
+	// Ready returns true if the service is configured with the minimum
+	// required credentials to process payments and verify webhooks.
+	Ready() bool
 }
 
 // DuplicateEventError is returned when a webhook event has already been
@@ -84,12 +90,19 @@ type paymentService struct {
 func NewPaymentService(repo *repository.PaymentRepository, cfg config.RazorpayConfig) PaymentService {
 	if cfg.WebhookSecret == "" {
 		log.Warn().Msg("payment_service: RAZORPAY_WEBHOOK_SECRET is empty — webhook signature verification will always fail")
-	}
-	if cfg.KeyID == "" || cfg.KeySecret == "" {
-		log.Warn().Msg("payment_service: RAZORPAY_KEY_ID or RAZORPAY_KEY_SECRET is empty — order creation will fail")
+	} else {
+		log.Info().Msg("payment_service: RAZORPAY_WEBHOOK_SECRET is configured")
 	}
 
-	log.Info().Msg("payment_service: initialized")
+	if cfg.KeyID == "" || cfg.KeySecret == "" {
+		log.Warn().Msg("payment_service: RAZORPAY_KEY_ID or RAZORPAY_KEY_SECRET is empty — order creation will fail")
+	} else {
+		log.Info().
+			Str("key_id_prefix", truncate(cfg.KeyID, 6)).
+			Msg("payment_service: Razorpay credentials configured")
+	}
+
+	log.Info().Msg("payment_service: initialized successfully")
 
 	return &paymentService{
 		repo:          repo,
@@ -321,6 +334,11 @@ func (s *paymentService) CreateRazorpayOrder(req dto.CreateOrderRequest) (*dto.C
 	defer resp.Body.Close()
 
 	if resp.StatusCode >= 400 {
+		body, _ := io.ReadAll(resp.Body)
+		log.Error().
+			Int("status", resp.StatusCode).
+			Str("body", string(body)).
+			Msg("razorpay api error")
 		return nil, fmt.Errorf("razorpay api error: status %d", resp.StatusCode)
 	}
 
@@ -343,7 +361,7 @@ func (s *paymentService) CreateRazorpayOrder(req dto.CreateOrderRequest) (*dto.C
 
 // VerifyCheckoutPayment validates the client-side checkout signature and returns
 // a normalized receipt payload for UI rendering / PDF export.
-func (s *paymentService) VerifyCheckoutPayment(req dto.VerifyPaymentRequest) (*dto.PaymentReceiptResponse, error) {
+func (s *paymentService) VerifyCheckoutPayment(ctx context.Context, req dto.VerifyPaymentRequest) (*dto.PaymentReceiptResponse, error) {
 	if s.keySecret == "" {
 		return nil, fmt.Errorf("razorpay credentials not configured")
 	}
@@ -369,6 +387,24 @@ func (s *paymentService) VerifyCheckoutPayment(req dto.VerifyPaymentRequest) (*d
 		currency = "INR"
 	}
 
+	if _, err := s.repo.ProcessSponsorshipTx(
+		ctx,
+		"checkout:"+req.RazorpayPaymentID,
+		req.RazorpayPaymentID,
+		sponsorName,
+		strings.TrimSpace(req.SponsorEmail),
+		req.Amount,
+		currency,
+	); err != nil {
+		if isDuplicateKeyError(err) {
+			log.Info().
+				Str("payment_id", req.RazorpayPaymentID).
+				Msg("payment_service: checkout sponsorship already recorded")
+		} else {
+			return nil, fmt.Errorf("payment_service.VerifyCheckoutPayment: failed to record sponsor: %w", err)
+		}
+	}
+
 	return &dto.PaymentReceiptResponse{
 		ReceiptNumber:     "RCPT-" + strings.ToUpper(strings.TrimPrefix(req.RazorpayPaymentID, "pay_")),
 		SponsorName:       sponsorName,
@@ -389,4 +425,9 @@ func (s *paymentService) VerifyCheckoutPayment(req dto.VerifyPaymentRequest) (*d
 // GetRecentSponsors fetches the top 10 recent sponsors.
 func (s *paymentService) GetRecentSponsors(ctx context.Context) ([]model.Sponsor, error) {
 	return s.repo.FindRecentSponsors(ctx, 10)
+}
+
+// Ready returns true if KeyID and KeySecret are set.
+func (s *paymentService) Ready() bool {
+	return s.keyID != "" && s.keySecret != ""
 }

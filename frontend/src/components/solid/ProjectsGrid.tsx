@@ -26,7 +26,7 @@ export default function ProjectsGrid() {
     try {
       const data = await getWorkHighlights();
       setWorks({
-        items: Array.isArray(data.items) ? data.items : [],
+        items: orderWorkItems(Array.isArray(data.items) ? data.items : []),
         github: data.github,
       });
       publishProjectsStatus("ready");
@@ -78,7 +78,7 @@ export default function ProjectsGrid() {
                 <div class="space-y-2">
                   <div class="flex flex-wrap items-center gap-2">
                     <span class="text-[9px] font-mono text-muted-foreground uppercase tracking-[0.24em]">
-                      {project.source === "github" ? "GITHUB" : "LOCAL"}
+                      {project.source === "github" ? "GITHUB" : "RESUME"}
                     </span>
                     <Show when={project.is_pinned}>
                       <span class="text-[9px] font-mono text-brand-orange uppercase tracking-[0.24em]">
@@ -175,6 +175,13 @@ export default function ProjectsGrid() {
       </Show>
     </div>
   );
+}
+
+function orderWorkItems(items: WorkHighlights["items"]): WorkHighlights["items"] {
+  return [...items].sort((a, b) => {
+    if (a.source === b.source) return 0;
+    return a.source === "resume" ? -1 : 1;
+  });
 }
 
 function attachMouseDragScroll(element: HTMLDivElement): void {

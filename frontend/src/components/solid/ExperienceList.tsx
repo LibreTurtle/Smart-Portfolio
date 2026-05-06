@@ -1,5 +1,5 @@
 import { For, createSignal, onMount } from "solid-js";
-import { getExperience } from "../../lib/api";
+import { getExperience, getEducation } from "../../lib/api";
 
 export interface ExperienceItem {
   company: string;
@@ -22,22 +22,35 @@ export default function ExperienceList(props: ExperienceListProps) {
 
   async function loadExperience(): Promise<void> {
     try {
-      const data = await getExperience();
-      if (!data || data.length === 0) return;
+      const [expData, eduData] = await Promise.all([
+        getExperience(),
+        getEducation()
+      ]);
 
-      const normalized = data
-        .slice(0, 4)
-        .map((item) => ({
-          company: String(item.company).toUpperCase().replace(/\s+/g, "_"),
-          role: String(item.role).toUpperCase().replace(/\s+/g, "_"),
-          period: `${item.start_date} - ${item.end_date}`.toUpperCase().replace(/\s+/g, "_"),
-          summary: item.summary.trim(),
-          stack: item.tech_stack 
-            ? item.tech_stack.split(',').map(s => s.trim().toUpperCase().replace(/\s+/g, "_"))
-            : [],
-        }));
+      const normalizedExp = (expData || []).map((item) => ({
+        company: String(item.company).toUpperCase().replace(/\s+/g, "_"),
+        role: String(item.role).toUpperCase().replace(/\s+/g, "_"),
+        period: `${item.start_date} - ${item.end_date}`.toUpperCase().replace(/\s+/g, "_"),
+        summary: item.summary.trim(),
+        stack: item.tech_stack 
+          ? item.tech_stack.split(',').map(s => s.trim().toUpperCase().replace(/\s+/g, "_"))
+          : [],
+      }));
 
-      setItems(normalized);
+      const normalizedEdu = (eduData || []).map((item) => ({
+        company: String(item.institution).toUpperCase().replace(/\s+/g, "_"),
+        role: String(item.degree).toUpperCase().replace(/\s+/g, "_"),
+        period: `${item.start_date} - ${item.end_date}`.toUpperCase().replace(/\s+/g, "_"),
+        summary: `LOCATION: ${item.location} | GPA: ${item.gpa}`,
+        stack: item.coursework
+          ? item.coursework.split(',').map(s => s.trim().toUpperCase().replace(/\s+/g, "_"))
+          : [],
+      }));
+
+      const combined = [...normalizedExp, ...normalizedEdu].slice(0, 6);
+      if (combined.length > 0) {
+        setItems(combined);
+      }
     } catch {
       return;
     }
@@ -48,12 +61,14 @@ export default function ExperienceList(props: ExperienceListProps) {
       <For each={items()}>
         {(item) => (
           <article class="bg-card p-6 md:p-8 space-y-5">
-            <div class="flex items-start justify-between gap-6">
-              <div class="space-y-2">
+            <div class="space-y-2">
+              <div class="flex items-center justify-between gap-5">
                 <span class="text-[9px] font-mono text-muted-foreground uppercase tracking-[0.2em]">NODE</span>
-                <h4 class="text-lg font-mono font-bold tracking-tight text-foreground">{item.company}</h4>
+                <span class="shrink-0 whitespace-nowrap text-right text-[9px] font-mono text-brand-orange uppercase tracking-[0.14em]">
+                {item.period}
+                </span>
               </div>
-              <span class="text-[9px] font-mono text-brand-orange uppercase tracking-[0.2em] whitespace-nowrap">{item.period}</span>
+              <h4 class="text-lg font-mono font-bold tracking-tight text-foreground [overflow-wrap:anywhere]" title={item.company}>{item.company}</h4>
             </div>
 
             <div class="border-l border-border pl-4 space-y-3">
