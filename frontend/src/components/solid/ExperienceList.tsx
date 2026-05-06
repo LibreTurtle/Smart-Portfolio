@@ -1,5 +1,5 @@
 import { For, createSignal, onMount } from "solid-js";
-import { apiUrl } from "../../lib/public-api";
+import { getExperience } from "../../lib/api";
 
 export interface ExperienceItem {
   company: string;
@@ -22,36 +22,22 @@ export default function ExperienceList(props: ExperienceListProps) {
 
   async function loadExperience(): Promise<void> {
     try {
-      const res = await fetch(apiUrl("/api/chat"), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          question:
-            'From the resume, return ONLY valid JSON as an array of work experience objects. Each object must have: company, role, period, summary, stack. Keep stack as an array of up to 4 short uppercase technologies. Keep summary to one short sentence. If exact data is missing, infer conservatively from the resume. No markdown. No explanation.',
-        }),
-      });
+      const data = await getExperience();
+      if (!data || data.length === 0) return;
 
-      const envelope = await res.json();
-      const raw = envelope?.data?.answer;
-      if (!envelope.success || !raw) return;
-
-      const parsed = JSON.parse(raw) as ExperienceItem[];
-      const normalized = parsed
-        .filter((item) => item.company && item.role)
+      const normalized = data
         .slice(0, 4)
         .map((item) => ({
           company: String(item.company).toUpperCase().replace(/\s+/g, "_"),
           role: String(item.role).toUpperCase().replace(/\s+/g, "_"),
-          period: String(item.period || "TIMELINE_UNSPECIFIED").toUpperCase().replace(/\s+/g, "_"),
-          summary: String(item.summary || "").trim(),
-          stack: Array.isArray(item.stack)
-            ? item.stack.slice(0, 4).map((tech) => String(tech).toUpperCase().replace(/\s+/g, "_"))
+          period: `${item.start_date} - ${item.end_date}`.toUpperCase().replace(/\s+/g, "_"),
+          summary: item.summary.trim(),
+          stack: item.tech_stack 
+            ? item.tech_stack.split(',').map(s => s.trim().toUpperCase().replace(/\s+/g, "_"))
             : [],
         }));
 
-      if (normalized.length > 0) {
-        setItems(normalized);
-      }
+      setItems(normalized);
     } catch {
       return;
     }

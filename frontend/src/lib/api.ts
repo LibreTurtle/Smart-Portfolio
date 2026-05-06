@@ -31,6 +31,13 @@ export const getWorkHighlights = () =>
 export const getProject = (id: string) =>
   fetchAPI<Project>(`/api/projects/${id}`);
 
+export const getProfile = () => fetchAPI<Profile>("/api/profile");
+export const getEducation = () => fetchAPI<Education[]>("/api/profile/education");
+export const getExperience = () => fetchAPI<Experience[]>("/api/profile/experience");
+export const getCertifications = () => fetchAPI<Certification[]>("/api/profile/certifications");
+export const getAchievements = () => fetchAPI<Achievement[]>("/api/profile/achievements");
+export const getSkills = () => fetchAPI<Skill[]>("/api/profile/skills");
+
 export const submitContact = (data: ContactRequest) =>
   fetchAPI<ContactMessageResponse>("/api/contact", {
     method: "POST",

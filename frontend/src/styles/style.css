@@ -21,6 +21,11 @@ body {
 
 #projects-grid.is-pointer-dragging {
   scroll-behavior: auto;
+  user-select: none;
+}
+
+#projects-grid.is-pointer-dragging * {
+  user-select: none;
 }
 
 @theme {

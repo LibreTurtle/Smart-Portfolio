@@ -10,6 +10,27 @@
 
 services:
   # ─────────────────────────────────────────────────────────────────────────
+  # PostgreSQL Database (with pgvector)
+  # ─────────────────────────────────────────────────────────────────────────
+  db:
+    image: pgvector/pgvector:pg16
+    container_name: smart-portfolio-db
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: portfolio
+      POSTGRES_PASSWORD: portfolio_secret
+      POSTGRES_DB: smart_portfolio
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U portfolio -d smart_portfolio"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ─────────────────────────────────────────────────────────────────────────
   # Smart Portfolio Application
   # ─────────────────────────────────────────────────────────────────────────
   app:
@@ -22,3 +43,13 @@ services:
       - "8080:8080"
     env_file:
       - .env
+    environment:
+      # If DATABASE_URL is not set in .env, fallback to the db service.
+      # We use 'db' as the hostname because they are in the same network.
+      - DATABASE_URL=${DATABASE_URL:-postgres://portfolio:portfolio_secret@db:5432/smart_portfolio?sslmode=disable}
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  pgdata:

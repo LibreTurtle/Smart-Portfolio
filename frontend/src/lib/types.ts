@@ -13,17 +13,60 @@ export interface Project {
   live_url?: string;
   created_at: string;
 }
+export interface Profile {
+  id: string;
+  first_name: string;
+  last_name: string;
+  primary_role: string;
+  specialization: string;
+  location: string;
+  summary: string;
+}
 
-export interface WorkItem {
+export interface Education {
+  id: string;
+  institution: string;
+  degree: string;
+  location: string;
+  start_date: string;
+  end_date: string;
+  gpa: string;
+  coursework: string;
+}
+
+export interface Experience {
+  id: string;
+  company: string;
+  role: string;
+  location: string;
+  start_date: string;
+  end_date: string;
+  summary: string;
+  tech_stack: string;
+}
+
+export interface Certification {
+  id: string;
+  name: string;
+  issuer: string;
+  issue_date: string;
+  url: string;
+}
+
+export interface Achievement {
   id: string;
   title: string;
+  metric: string;
   description: string;
-  tech_stack?: string;
-  github_url?: string;
-  live_url?: string;
-  source: "github" | "manual";
-  stars?: number;
-  is_pinned?: boolean;
+  date: string;
+}
+
+export interface Skill {
+  id: string;
+  category: string;
+  name: string;
+}
+
   updated_at?: string;
   created_at: string;
 }

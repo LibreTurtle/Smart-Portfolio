@@ -1,5 +1,5 @@
 import { For, createSignal, onMount } from "solid-js";
-import { apiUrl } from "../../lib/public-api";
+import { getAchievements } from "../../lib/api";
 
 export interface AchievementItem {
   title: string;
@@ -20,22 +20,10 @@ export default function AchievementsGrid(props: AchievementsGridProps) {
 
   async function loadAchievements(): Promise<void> {
     try {
-      const res = await fetch(apiUrl("/api/chat"), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          question:
-            'From the resume, return ONLY valid JSON as an array of notable achievement objects. Each object must have: title, metric, description. Keep title and metric short. Keep description to one short sentence. Prefer measurable or high-signal outcomes. If exact metrics are unavailable, summarize conservatively. No markdown. No explanation.',
-        }),
-      });
+      const data = await getAchievements();
+      if (!data || data.length === 0) return;
 
-      const envelope = await res.json();
-      const raw = envelope?.data?.answer;
-      if (!envelope.success || !raw) return;
-
-      const parsed = JSON.parse(raw) as AchievementItem[];
-      const normalized = parsed
-        .filter((item) => item.title && item.description)
+      const normalized = data
         .slice(0, 6)
         .map((item) => ({
           title: String(item.title).toUpperCase().replace(/\s+/g, "_"),
@@ -43,13 +31,12 @@ export default function AchievementsGrid(props: AchievementsGridProps) {
           description: String(item.description).trim(),
         }));
 
-      if (normalized.length > 0) {
-        setItems(normalized);
-      }
+      setItems(normalized);
     } catch {
       return;
     }
   }
+
 
   return (
     <div id="achievement-grid" class="app-scrollbar grid grid-cols-1 md:grid-cols-2 gap-px bg-border border border-border max-h-[22rem] overflow-y-auto">

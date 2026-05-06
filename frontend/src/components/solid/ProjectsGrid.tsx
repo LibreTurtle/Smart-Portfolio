@@ -14,6 +14,7 @@ export default function ProjectsGrid() {
   let sliderRef: HTMLDivElement | undefined;
 
   onMount(() => {
+    publishProjectsStatus("fetching");
     if (sliderRef) {
       attachMouseDragScroll(sliderRef);
     }
@@ -28,9 +29,11 @@ export default function ProjectsGrid() {
         items: Array.isArray(data.items) ? data.items : [],
         github: data.github,
       });
+      publishProjectsStatus("ready");
       refreshProjectsScrollbar();
     } catch {
       setError(true);
+      publishProjectsStatus("offline");
       refreshProjectsScrollbar();
     }
   }
@@ -39,7 +42,7 @@ export default function ProjectsGrid() {
     <div
       id="projects-grid"
       ref={sliderRef}
-      class="app-scrollbar flex overflow-x-auto snap-x snap-mandatory gap-px border border-border bg-border select-none"
+      class="app-scrollbar flex overflow-x-auto snap-x snap-mandatory gap-px border border-border bg-border"
     >
       <Show when={error()}>
         <div class="w-full bg-background p-12 text-center text-brand-orange font-mono text-xs uppercase tracking-widest">
@@ -75,7 +78,7 @@ export default function ProjectsGrid() {
                 <div class="space-y-2">
                   <div class="flex flex-wrap items-center gap-2">
                     <span class="text-[9px] font-mono text-muted-foreground uppercase tracking-[0.24em]">
-                      {project.source === "github" ? "GH_SYNC" : "LOCAL"}
+                      {project.source === "github" ? "GITHUB" : "LOCAL"}
                     </span>
                     <Show when={project.is_pinned}>
                       <span class="text-[9px] font-mono text-brand-orange uppercase tracking-[0.24em]">
@@ -89,7 +92,7 @@ export default function ProjectsGrid() {
                 </div>
                 <div class="flex gap-4 text-muted-foreground">
                   <Show when={project.github_url}>
-                    <a href={project.github_url} target="_blank" class="hover:text-brand-orange transition-colors">
+                    <a href={project.github_url} target="_blank" rel="noreferrer" class="transition-colors hover:text-brand-orange dark:hover:text-brand-green">
                       <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <path d="M15 22v-4a4.8 4.8 0 0 0-1-3.5c3 0 6-2 6-5.5.08-1.25-.27-2.48-1-3.5.28-1.15.28-2.35 0-3.5 0 0-1 0-3 1.5-2.64-.5-5.36-.5-8 0C6 2 5 2 5 2c-.3 1.15-.3 2.35 0 3.5A5.403 5.403 0 0 0 4 9c0 3.5 3 5.5 6 5.5-.39.49-.68 1.05-.85 1.65-.17.6-.22 1.23-.15 1.85v4" />
                         <path d="M9 18c-4.51 2-5-2-7-2" />
@@ -138,7 +141,7 @@ export default function ProjectsGrid() {
             href={works()!.github!.repositories_url}
             target="_blank"
             rel="noreferrer"
-            class="relative flex h-full flex-col justify-between overflow-hidden border border-border bg-background px-5 py-5 transition-colors hover:border-brand-orange"
+            class="group relative flex h-full flex-col justify-between overflow-hidden border border-border bg-background px-5 py-5 transition-colors hover:border-brand-orange dark:hover:border-brand-green"
           >
             <div class="pointer-events-none absolute inset-0 bg-[linear-gradient(135deg,transparent_0%,transparent_62%,color-mix(in_srgb,var(--brand-orange,#ff8c00)_16%,transparent)_62%,color-mix(in_srgb,var(--brand-orange,#ff8c00)_16%,transparent)_64%,transparent_64%)] opacity-80"></div>
             <div class="space-y-4">
@@ -146,12 +149,12 @@ export default function ProjectsGrid() {
                 <div class="text-[9px] font-mono uppercase tracking-[0.24em] text-muted-foreground">
                   EXIT_NODE
                 </div>
-                <div class="text-[9px] font-mono uppercase tracking-[0.24em] text-brand-orange">
+                <div class="text-[9px] font-mono uppercase tracking-[0.24em] text-brand-green dark:text-brand-orange">
                   GITHUB.COM
                 </div>
               </div>
               <div class="space-y-2">
-                <h4 class="font-mono text-lg font-bold tracking-tight text-foreground">
+                <h4 class="font-mono text-lg font-bold tracking-tight text-foreground transition-colors group-hover:text-brand-green">
                   VIEW_MORE_WORKS
                 </h4>
                 <p class="text-[11px] leading-relaxed font-mono tracking-tight text-muted-foreground">
@@ -163,7 +166,7 @@ export default function ProjectsGrid() {
               <span class="text-[9px] font-mono uppercase tracking-widest text-zinc-500">
                 END_OF_STREAM
               </span>
-              <span class="text-[9px] font-mono uppercase tracking-widest text-brand-orange">
+              <span class="text-[9px] font-mono uppercase tracking-widest text-brand-green dark:text-brand-orange">
                 OPEN_EXTERNAL
               </span>
             </div>
@@ -251,4 +254,12 @@ function refreshProjectsScrollbar(): void {
       window.refreshCustomScrollbars?.();
     });
   });
+}
+
+function publishProjectsStatus(status: "fetching" | "ready" | "offline"): void {
+  window.dispatchEvent(
+    new CustomEvent("projects-status-change", {
+      detail: { status },
+    }),
+  );
 }

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/joho/godotenv"
@@ -110,7 +111,7 @@ func Load() (*Config, error) {
 	cfg.Server.Port = envOrDefault("PORT", envOrDefault("SERVER_PORT", "8080"))
 
 	// ── Database ─────────────────────────────────────────────────────────
-	cfg.Database.URL = requireEnv("DATABASE_URL", &errs)
+	cfg.Database.URL = envOrDefault("DATABASE_URL", "postgres://portfolio:portfolio_secret@localhost:5432/smart_portfolio?sslmode=disable")
 	cfg.Database.MaxOpenConns = envIntOrDefault("DB_MAX_OPEN_CONNS", 10)
 	cfg.Database.MaxIdleConns = envIntOrDefault("DB_MAX_IDLE_CONNS", 5)
 	cfg.Database.ConnMaxLifetime = time.Duration(envIntOrDefault("DB_CONN_MAX_LIFETIME_MIN", 30)) * time.Minute
@@ -178,14 +179,15 @@ func requireEnv(key string, errs *[]string) string {
 	if v == "" {
 		*errs = append(*errs, key)
 	}
-	return v
+	return strings.Trim(v, "\"'")
 }
 
 func envOrDefault(key, fallback string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
+	v := os.Getenv(key)
+	if v == "" {
+		return fallback
 	}
-	return fallback
+	return strings.Trim(v, "\"'")
 }
 
 func envIntOrDefault(key string, fallback int) int {
@@ -193,6 +195,7 @@ func envIntOrDefault(key string, fallback int) int {
 	if v == "" {
 		return fallback
 	}
+	v = strings.Trim(v, "\"'")
 	n, err := strconv.Atoi(v)
 	if err != nil {
 		return fallback
@@ -205,6 +208,7 @@ func envFloatOrDefault(key string, fallback float64) float64 {
 	if v == "" {
 		return fallback
 	}
+	v = strings.Trim(v, "\"'")
 	f, err := strconv.ParseFloat(v, 64)
 	if err != nil {
 		return fallback

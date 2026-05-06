@@ -23,6 +23,7 @@ import (
 const (
 	githubGraphQLEndpoint = "https://api.github.com/graphql"
 	githubRESTEndpoint    = "https://api.github.com"
+	maxPassiveSyncAge     = 10 * time.Minute
 )
 
 type GitHubSyncService interface {
@@ -95,7 +96,11 @@ func (s *githubSyncService) Sync(ctx context.Context, force bool) error {
 		if err != nil {
 			return fmt.Errorf("github_sync_service.Sync: load profile: %w", err)
 		}
-		if profile != nil && profile.LastSyncedAt != nil && time.Since(*profile.LastSyncedAt) < s.cfg.SyncInterval {
+		effectiveMaxAge := s.cfg.SyncInterval
+		if effectiveMaxAge <= 0 || effectiveMaxAge > maxPassiveSyncAge {
+			effectiveMaxAge = maxPassiveSyncAge
+		}
+		if profile != nil && profile.LastSyncedAt != nil && time.Since(*profile.LastSyncedAt) < effectiveMaxAge {
 			return nil
 		}
 	}
