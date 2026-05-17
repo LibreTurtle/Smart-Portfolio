@@ -34,11 +34,10 @@ backend/tmp/
 *.log
 logs/
 
-# ─── Frontend (bun / build artifacts) ────────────────────────────────────────
+# ─── Frontend (package manager / build artifacts) ───────────────────────────
 frontend/node_modules/
 frontend/.astro/
 frontend/dist/
-frontend/package-lock.json
 
 # ─── MkDocs ───────────────────────────────────────────────────────────────────
 site/

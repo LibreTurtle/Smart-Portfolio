@@ -1,23 +1,24 @@
 # Smart Portfolio Frontend
 
-Astro + TypeScript frontend for the Smart Portfolio backend. Requires **Bun** as the package manager and runtime.
+Astro + TypeScript frontend for the Smart Portfolio backend. The project is compatible with Node.js and npm for local development and CI.
 
 ## Prerequisites
 
-- [Bun](https://bun.sh/) >= 1.0
+- Node.js >= 22.12
+- npm
 - Go backend running on `http://localhost:8080` (see [`../backend/README.md`](../backend/README.md))
 
 ## Setup
 
 ```bash
 cp .env.example .env
-bun install
+npm ci
 ```
 
 ## Development
 
 ```bash
-bun run dev
+npm run dev
 ```
 
 Opens at `http://localhost:5173`. API calls are proxied to `http://localhost:8080`.
@@ -25,14 +26,14 @@ Opens at `http://localhost:5173`. API calls are proxied to `http://localhost:808
 ## Type Checking
 
 ```bash
-bun run check
+npm run check
 ```
 
 ## Production Build
 
 ```bash
-bun run build
-bun run preview
+npm run build
+npm run preview
 ```
 
 ## Configuration
@@ -56,12 +57,12 @@ PUBLIC_DEV_API_PROXY=http://localhost:8080
 - The frontend is static, so you can deploy `dist/` to any static host after:
 
 ```bash
-bun run build
+npm run build
 ```
 
 ## Architecture
 
 - **Astro** — static-first framework with island architecture
 - **TypeScript (strict)** — all code is strictly typed
-- **Bun** — fast runtime and package manager
+- **Node.js + npm** — runtime and package manager used by CI
 - Content is dynamically loaded from the backend AI chat endpoint, reflecting the admin-ingested resume

@@ -5,8 +5,9 @@
 #
 # Jobs:
 #   1. lint    — go vet + staticcheck
-#   2. test    — unit tests with coverage
-#   3. build   — compile binary + Docker image
+#   2. frontend — npm install + Astro build
+#   3. test     — unit tests with coverage
+#   4. build    — compile binary + backend/full Docker images
 # =============================================================================
 
 name: CI
@@ -22,7 +23,7 @@ permissions:
 
 env:
   GO_VERSION: "1.26"
-  BUN_VERSION: "latest"
+  NODE_VERSION: "22"
 
 defaults:
   run:
@@ -83,18 +84,20 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v6
 
-      - name: Set up Bun
-        uses: oven-sh/setup-bun@v2
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
         with:
-          bun-version: ${{ env.BUN_VERSION }}
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
 
       - name: Install frontend dependencies
         working-directory: frontend
-        run: bun install --frozen-lockfile
+        run: npm ci
 
       - name: Build frontend
         working-directory: frontend
-        run: bun run build
+        run: npm run build
 
   # ---------------------------------------------------------------------------
   # Test
@@ -164,10 +167,16 @@ jobs:
       - name: Build Docker image
         run: docker build -t smart-portfolio:ci .
 
+      - name: Build full-stack Docker image
+        working-directory: ${{ github.workspace }}
+        run: docker build -f Dockerfile.full -t smart-portfolio-full:ci .
+
       - name: Verify Docker image health
         run: |
-          echo "Image size:"
+          echo "Backend image size:"
           docker images smart-portfolio:ci --format "{{.Size}}"
+          echo "Full-stack image size:"
+          docker images smart-portfolio-full:ci --format "{{.Size}}"
 
       - name: Upload binary artifact
         uses: actions/upload-artifact@v4

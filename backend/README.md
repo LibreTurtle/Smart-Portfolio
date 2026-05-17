@@ -71,6 +71,39 @@ docker compose logs -f app     # Tail logs
 docker compose down            # Stop
 ```
 
+### Release Images
+
+The CD workflow publishes two container images for each `v*` tag:
+
+| Image | Runtime |
+|-------|---------|
+| `ghcr.io/<owner>/smart-portfolio-backend:<version>` | Backend API only. Requires external PostgreSQL, frontend URL, and service credentials. |
+| `ghcr.io/<owner>/smart-portfolio-full:<version>` | All-in-one image with static frontend, backend API, and PostgreSQL/pgvector in one container. |
+
+Backend-only example:
+
+```bash
+docker run --rm -p 8080:8080 \
+  -e DATABASE_URL="postgres://user:pass@host:5432/db?sslmode=require" \
+  -e FRONTEND_URL="https://your-frontend.example" \
+  -e GROQ_API_KEY="..." \
+  -e JINA_API_KEY="..." \
+  -e PINECONE_API_KEY="..." \
+  ghcr.io/<owner>/smart-portfolio-backend:<version>
+```
+
+Full-stack example:
+
+```bash
+docker run --rm -p 3000:3000 -p 8080:8080 \
+  -e GROQ_API_KEY="..." \
+  -e JINA_API_KEY="..." \
+  -e PINECONE_API_KEY="..." \
+  ghcr.io/<owner>/smart-portfolio-full:<version>
+```
+
+Open `http://localhost:3000` for the frontend. Mount `/var/lib/postgresql/data` if you need database persistence.
+
 ### Option 2: Local Development
 
 ```bash

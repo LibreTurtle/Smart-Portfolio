@@ -1,0 +1,82 @@
+# ============================================================================
+# Smart Portfolio full-stack image
+# ============================================================================
+# Builds and runs:
+#   - Astro static frontend, served by Nginx on :3000
+#   - Go backend API on :8080
+#   - PostgreSQL with pgvector inside the container
+#
+# External AI/payment services still require runtime environment variables.
+# ============================================================================
+
+FROM golang:1.26-alpine AS backend-builder
+
+RUN apk add --no-cache ca-certificates git tzdata
+
+WORKDIR /src/backend
+
+COPY backend/go.mod backend/go.sum ./
+RUN go mod download && go mod verify
+
+COPY backend ./
+
+ARG TARGETOS=linux
+ARG TARGETARCH=amd64
+ARG VERSION=dev
+
+RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build \
+    -ldflags="-s -w -extldflags '-static' -X main.version=${VERSION}" \
+    -trimpath \
+    -o /out/server \
+    ./cmd/server
+
+FROM node:22-bookworm-slim AS frontend-builder
+
+WORKDIR /src/frontend
+
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci
+
+COPY frontend ./
+
+ENV PUBLIC_API_URL=
+RUN npm run build
+
+FROM pgvector/pgvector:pg16
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        ca-certificates \
+        curl \
+        gosu \
+        nginx \
+        tzdata \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+COPY --from=backend-builder /out/server /app/server
+COPY --from=backend-builder /src/backend/migrations /app/migrations
+COPY --from=frontend-builder /src/frontend/dist /usr/share/nginx/html
+COPY deploy/full/nginx.conf /etc/nginx/nginx.conf
+COPY deploy/full/start.sh /usr/local/bin/start-smart-portfolio
+
+RUN chmod +x /usr/local/bin/start-smart-portfolio \
+    && mkdir -p /run/postgresql /var/log/nginx /var/lib/nginx/body \
+    && chown -R postgres:postgres /run/postgresql /var/lib/postgresql
+
+ENV ENV=production \
+    PORT=8080 \
+    FRONTEND_URL=http://localhost:3000 \
+    PGDATA=/var/lib/postgresql/data \
+    POSTGRES_DB=smart_portfolio \
+    POSTGRES_USER=portfolio \
+    POSTGRES_PASSWORD=portfolio_secret
+
+EXPOSE 3000 8080
+VOLUME ["/var/lib/postgresql/data"]
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+    CMD curl -fsS http://127.0.0.1:8080/healthz >/dev/null || exit 1
+
+ENTRYPOINT ["/usr/local/bin/start-smart-portfolio"]

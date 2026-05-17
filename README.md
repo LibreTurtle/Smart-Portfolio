@@ -38,13 +38,14 @@ smart-portfolio/
 
 ### Frontend
 
-The frontend directory is ready for any modern framework. See [`frontend/README.md`](frontend/README.md) for a detailed integration guide with TypeScript types, SSE streaming helpers, and deployment architecture.
+The frontend is an Astro + TypeScript app that builds with Node.js and npm. See [`frontend/README.md`](frontend/README.md) for setup, environment variables, and deployment notes.
 
 ## Quick Start
 
 ### Prerequisites
 
 - [Go 1.26+](https://go.dev/dl/)
+- [Node.js 22.12+](https://nodejs.org/) for frontend development/builds
 - [Docker](https://docs.docker.com/get-docker/) and Docker Compose
 - A [Groq API key](https://console.groq.com/) (free tier)
 - A [Jina API key](https://jina.ai/) (free tier)
@@ -154,6 +155,39 @@ See [`backend/.env.example`](backend/.env.example) for the full annotated list. 
 │       (Neon / Supabase / Railway)           │
 └─────────────────────────────────────────────┘
 ```
+
+### Release Images
+
+Tagged releases publish two GHCR images:
+
+| Image | Purpose |
+|-------|---------|
+| `ghcr.io/<owner>/smart-portfolio-backend:<version>` | Backend API only. Provide external `DATABASE_URL`, `FRONTEND_URL`, and service keys. |
+| `ghcr.io/<owner>/smart-portfolio-full:<version>` | One-container demo/self-host image with frontend, backend, and PostgreSQL/pgvector. |
+
+Backend-only:
+
+```bash
+docker run --rm -p 8080:8080 \
+  -e DATABASE_URL="postgres://user:pass@host:5432/db?sslmode=require" \
+  -e FRONTEND_URL="https://your-frontend.example" \
+  -e GROQ_API_KEY="..." \
+  -e JINA_API_KEY="..." \
+  -e PINECONE_API_KEY="..." \
+  ghcr.io/<owner>/smart-portfolio-backend:<version>
+```
+
+Full stack:
+
+```bash
+docker run --rm -p 3000:3000 -p 8080:8080 \
+  -e GROQ_API_KEY="..." \
+  -e JINA_API_KEY="..." \
+  -e PINECONE_API_KEY="..." \
+  ghcr.io/<owner>/smart-portfolio-full:<version>
+```
+
+Open `http://localhost:3000` for the full app. The full image stores PostgreSQL data in `/var/lib/postgresql/data`, so mount that path for persistence.
 
 ## License
 

@@ -17,10 +17,11 @@ COPY . .
 
 ARG TARGETOS
 ARG TARGETARCH
+ARG VERSION=dev
 
 # Build a statically linked binary with all optimizations
 RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-amd64} go build \
-    -ldflags="-s -w -extldflags '-static'" \
+    -ldflags="-s -w -extldflags '-static' -X main.version=${VERSION}" \
     -trimpath \
     -o /app/bin/server \
     ./cmd/server

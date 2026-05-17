@@ -5,7 +5,7 @@
 #
 # Jobs:
 #   1. test     — run full test suite before deploying anything
-#   2. release  — build multi-platform Docker image, push to GHCR, create GitHub Release
+#   2. release  — build backend + full-stack Docker images, push to GHCR, create GitHub Release
 # =============================================================================
 
 name: CD
@@ -21,8 +21,10 @@ permissions:
 
 env:
   GO_VERSION: "1.26"
+  NODE_VERSION: "22"
   REGISTRY: ghcr.io
-  IMAGE_REPOSITORY: smart-portfolio
+  BACKEND_IMAGE_REPOSITORY: smart-portfolio-backend
+  FULL_IMAGE_REPOSITORY: smart-portfolio-full
 
 defaults:
   run:
@@ -47,6 +49,21 @@ jobs:
 
       - name: Run tests
         run: go test ./... -count=1 -race
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Build frontend
+        working-directory: frontend
+        run: npm run build
 
   # ---------------------------------------------------------------------------
   # Release — Docker image to GHCR + GitHub Release with binary
@@ -144,31 +161,63 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       # ── Docker: generate image tags and labels ────────────────────────
-      - name: Extract Docker metadata
-        id: docker-meta
+      - name: Extract backend Docker metadata
+        id: backend-docker-meta
         uses: docker/metadata-action@v6
         with:
-          images: ${{ env.REGISTRY }}/${{ steps.image-owner.outputs.owner }}/${{ env.IMAGE_REPOSITORY }}
+          images: ${{ env.REGISTRY }}/${{ steps.image-owner.outputs.owner }}/${{ env.BACKEND_IMAGE_REPOSITORY }}
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=semver,pattern={{major}}
             type=raw,value=latest
           labels: |
-            org.opencontainers.image.title=Smart Portfolio
-            org.opencontainers.image.description=Portfolio backend with AI chat, payments, and admin dashboard
+            org.opencontainers.image.title=Smart Portfolio Backend
+            org.opencontainers.image.description=Backend API only. Requires external PostgreSQL, frontend, and service URLs.
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
 
-      # ── Docker: build and push multi-platform image ───────────────────
-      - name: Build and push Docker image
+      - name: Extract full-stack Docker metadata
+        id: full-docker-meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ env.REGISTRY }}/${{ steps.image-owner.outputs.owner }}/${{ env.FULL_IMAGE_REPOSITORY }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=raw,value=latest
+          labels: |
+            org.opencontainers.image.title=Smart Portfolio Full Stack
+            org.opencontainers.image.description=All-in-one image with backend, static frontend, and PostgreSQL/pgvector.
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+
+      # ── Docker: build and push multi-platform images ──────────────────
+      - name: Build and push backend Docker image
         uses: docker/build-push-action@v7
         with:
           context: backend
           file: backend/Dockerfile
           push: true
           platforms: linux/amd64,linux/arm64
-          tags: ${{ steps.docker-meta.outputs.tags }}
-          labels: ${{ steps.docker-meta.outputs.labels }}
+          tags: ${{ steps.backend-docker-meta.outputs.tags }}
+          labels: ${{ steps.backend-docker-meta.outputs.labels }}
+          build-args: |
+            VERSION=${{ steps.meta.outputs.version }}
+          cache-from: type=gha,scope=backend
+          cache-to: type=gha,mode=max,scope=backend
+          provenance: false
+
+      - name: Build and push full-stack Docker image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: Dockerfile.full
+          push: true
+          platforms: linux/amd64,linux/arm64
+          tags: ${{ steps.full-docker-meta.outputs.tags }}
+          labels: ${{ steps.full-docker-meta.outputs.labels }}
+          build-args: |
+            VERSION=${{ steps.meta.outputs.version }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           provenance: false
@@ -189,11 +238,33 @@ jobs:
             backend/dist/smart-portfolio-darwin-amd64
             backend/dist/smart-portfolio-windows-amd64.exe
           body: |
-            ## Docker Image
+            ## Docker Images
+
+            Backend only. Provide your own frontend and database URLs:
 
             ```bash
-            docker pull ${{ env.REGISTRY }}/${{ steps.image-owner.outputs.owner }}/${{ env.IMAGE_REPOSITORY }}:${{ steps.meta.outputs.version }}
+            docker pull ${{ env.REGISTRY }}/${{ steps.image-owner.outputs.owner }}/${{ env.BACKEND_IMAGE_REPOSITORY }}:${{ steps.meta.outputs.version }}
+            docker run --rm -p 8080:8080 \
+              -e DATABASE_URL="postgres://user:pass@host:5432/db?sslmode=require" \
+              -e FRONTEND_URL="https://your-frontend.example" \
+              -e GROQ_API_KEY="..." \
+              -e JINA_API_KEY="..." \
+              -e PINECONE_API_KEY="..." \
+              ${{ env.REGISTRY }}/${{ steps.image-owner.outputs.owner }}/${{ env.BACKEND_IMAGE_REPOSITORY }}:${{ steps.meta.outputs.version }}
             ```
+
+            Full stack. Includes static frontend, backend, and PostgreSQL/pgvector in one container:
+
+            ```bash
+            docker pull ${{ env.REGISTRY }}/${{ steps.image-owner.outputs.owner }}/${{ env.FULL_IMAGE_REPOSITORY }}:${{ steps.meta.outputs.version }}
+            docker run --rm -p 3000:3000 -p 8080:8080 \
+              -e GROQ_API_KEY="..." \
+              -e JINA_API_KEY="..." \
+              -e PINECONE_API_KEY="..." \
+              ${{ env.REGISTRY }}/${{ steps.image-owner.outputs.owner }}/${{ env.FULL_IMAGE_REPOSITORY }}:${{ steps.meta.outputs.version }}
+            ```
+
+            Open `http://localhost:3000` for the complete app.
 
             ## Binaries
 
