@@ -102,6 +102,9 @@ jobs:
           echo "Using image owner: $OWNER_LOWER"
 
       # ── Build static binaries ─────────────────────────────────────────
+      - name: Prepare release output directory
+        run: mkdir -p dist
+
       - name: Build linux/amd64 binary
         run: |
           CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
@@ -140,6 +143,14 @@ jobs:
             -trimpath \
             -ldflags="-s -w -X main.version=${{ steps.meta.outputs.version }}" \
             -o dist/smart-portfolio-windows-amd64.exe \
+            ./cmd/server
+
+      - name: Build windows/arm64 binary
+        run: |
+          CGO_ENABLED=0 GOOS=windows GOARCH=arm64 go build \
+            -trimpath \
+            -ldflags="-s -w -X main.version=${{ steps.meta.outputs.version }}" \
+            -o dist/smart-portfolio-windows-arm64.exe \
             ./cmd/server
 
       - name: List built binaries
@@ -237,6 +248,7 @@ jobs:
             backend/dist/smart-portfolio-darwin-arm64
             backend/dist/smart-portfolio-darwin-amd64
             backend/dist/smart-portfolio-windows-amd64.exe
+            backend/dist/smart-portfolio-windows-arm64.exe
           body: |
             ## Docker Images
 
@@ -275,3 +287,4 @@ jobs:
             | macOS Apple Silicon | `smart-portfolio-darwin-arm64` |
             | macOS Intel | `smart-portfolio-darwin-amd64` |
             | Windows amd64 | `smart-portfolio-windows-amd64.exe` |
+            | Windows arm64 | `smart-portfolio-windows-arm64.exe` |
