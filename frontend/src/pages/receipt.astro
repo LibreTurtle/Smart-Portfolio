@@ -1,0 +1,193 @@
+---
+import Layout from "../layouts/Layout.astro";
+---
+
+<Layout title="Receipt Verification | ZR_SYSTEMS" description="Private sponsorship receipt verification." robots="noindex,nofollow">
+  <main class="min-h-screen px-4 py-6 sm:px-6 lg:px-8">
+    <section class="mx-auto flex min-h-[calc(100vh-3rem)] w-full max-w-6xl items-center">
+      <div class="w-full border border-border bg-background/95 shadow-[0_30px_90px_rgba(0,0,0,0.28)]">
+        <div class="flex flex-col gap-4 border-b border-border bg-muted px-4 py-4 sm:px-6 lg:flex-row lg:items-start lg:justify-between">
+          <div class="space-y-2">
+            <p class="text-[10px] font-mono uppercase tracking-[0.24em] text-muted-foreground">// PRIVATE_RECEIPT_NODE</p>
+            <h1 class="text-2xl font-mono font-bold tracking-tight sm:text-3xl">SPONSORSHIP_RECEIPT</h1>
+          </div>
+          <div class="flex flex-wrap items-center gap-3">
+            <div id="receipt-status" class="border border-border bg-background px-3 py-2 text-[10px] font-mono uppercase tracking-widest text-brand-orange">LOADING</div>
+            <button id="receipt-download" type="button" class="hidden border border-border bg-foreground px-4 py-2 text-[10px] font-mono font-bold uppercase tracking-[0.22em] text-background transition-colors hover:bg-brand-green hover:text-white">
+              DOWNLOAD_PDF
+            </button>
+          </div>
+        </div>
+
+        <div class="p-4 sm:p-6 lg:p-8">
+          <div id="receipt-error" class="hidden border border-brand-red bg-card p-5 text-sm font-mono leading-relaxed text-brand-red">
+            RECEIPT_NOT_AVAILABLE. OPEN THIS PAGE FROM THE QR CODE ON THE PAYMENT RECEIPT.
+          </div>
+
+          <div id="receipt-details" class="hidden space-y-6">
+            <div class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_18rem]">
+              <div class="space-y-5">
+                <div class="grid gap-4 md:grid-cols-2">
+                  <div class="border border-border bg-card p-4">
+                    <div class="text-[10px] font-mono uppercase tracking-widest text-muted-foreground">RECEIPT_NO</div>
+                    <div id="receipt-number" class="mt-2 break-all text-sm font-mono text-foreground">-</div>
+                  </div>
+                  <div class="border border-border bg-card p-4">
+                    <div class="text-[10px] font-mono uppercase tracking-widest text-muted-foreground">ISSUED_AT</div>
+                    <div id="receipt-issued-at" class="mt-2 text-sm font-mono text-foreground">-</div>
+                  </div>
+                </div>
+
+                <div class="grid gap-px bg-border md:grid-cols-2">
+                  <div class="space-y-2 bg-card p-4">
+                    <div class="text-[10px] font-mono uppercase tracking-widest text-muted-foreground">PAID_BY</div>
+                    <div id="receipt-sponsor" class="text-lg font-mono font-bold text-foreground">-</div>
+                    <div id="receipt-email" class="break-all text-[11px] font-mono uppercase tracking-widest text-muted-foreground">-</div>
+                  </div>
+                  <div class="space-y-2 bg-card p-4">
+                    <div class="text-[10px] font-mono uppercase tracking-widest text-muted-foreground">PAID_TO</div>
+                    <div id="receipt-recipient" class="text-lg font-mono font-bold text-foreground">-</div>
+                    <div id="receipt-role" class="text-[11px] font-mono uppercase tracking-widest text-muted-foreground">-</div>
+                  </div>
+                </div>
+
+                <div class="grid gap-4 md:grid-cols-3">
+                  <div class="border border-border bg-card p-4">
+                    <div class="text-[10px] font-mono uppercase tracking-widest text-muted-foreground">AMOUNT</div>
+                    <div id="receipt-amount" class="mt-2 text-2xl font-mono font-bold text-brand-green">-</div>
+                  </div>
+                  <div class="border border-border bg-card p-4">
+                    <div class="text-[10px] font-mono uppercase tracking-widest text-muted-foreground">STATUS</div>
+                    <div id="receipt-payment-status" class="mt-2 text-sm font-mono font-bold text-brand-green">-</div>
+                  </div>
+                  <div class="border border-border bg-card p-4">
+                    <div class="text-[10px] font-mono uppercase tracking-widest text-muted-foreground">METHOD</div>
+                    <div class="mt-2 text-sm font-mono text-foreground">RAZORPAY</div>
+                  </div>
+                </div>
+              </div>
+
+              <aside class="border border-border bg-card p-4">
+                <div id="receipt-qr" class="qr-grid mx-auto grid aspect-square w-full max-w-[18rem] gap-0 bg-white p-4" aria-label="Receipt verification QR code"></div>
+                <div class="mt-4 text-center text-[10px] font-mono uppercase leading-relaxed tracking-widest text-muted-foreground">PRIVATE_VERIFY_QR</div>
+              </aside>
+            </div>
+
+            <div class="grid gap-4 md:grid-cols-2">
+              <div class="border border-border bg-card p-4">
+                <div class="text-[10px] font-mono uppercase tracking-widest text-muted-foreground">ORDER_ID</div>
+                <div id="receipt-order-id" class="mt-2 break-all text-[11px] font-mono text-foreground">-</div>
+              </div>
+              <div class="border border-border bg-card p-4">
+                <div class="text-[10px] font-mono uppercase tracking-widest text-muted-foreground">PAYMENT_ID</div>
+                <div id="receipt-payment-id" class="mt-2 break-all text-[11px] font-mono text-foreground">-</div>
+              </div>
+            </div>
+
+            <div id="receipt-message" class="border-l border-brand-green bg-card p-4 pl-5 text-sm font-mono leading-relaxed text-muted-foreground">-</div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+</Layout>
+
+<style>
+  :global(.qr-grid) {
+    image-rendering: pixelated;
+  }
+
+  :global(.qr-cell) {
+    display: block;
+    background: #ffffff;
+  }
+
+  :global(.qr-cell-active) {
+    margin: 8%;
+    background: #000000;
+    border-radius: 22%;
+  }
+</style>
+
+<script>
+  import { apiUrl } from "../lib/public-api";
+  import {
+    buildVerificationUrl,
+    downloadReceiptPdf,
+    formatMoney,
+    formatTimestamp,
+    renderQr,
+    type ReceiptData,
+  } from "../lib/receipt";
+
+  let receiptData: ReceiptData | null = null;
+
+  const text = (id: string, value: string): void => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = value;
+  };
+
+  const showError = (): void => {
+    const status = document.getElementById("receipt-status");
+    if (status) {
+      status.textContent = "DENIED";
+      status.className = "border border-brand-red bg-background px-3 py-2 text-[10px] font-mono uppercase tracking-widest text-brand-red";
+    }
+    document.getElementById("receipt-download")?.classList.add("hidden");
+    document.getElementById("receipt-error")?.classList.remove("hidden");
+    document.getElementById("receipt-details")?.classList.add("hidden");
+  };
+
+  const showReceipt = (receipt: ReceiptData): void => {
+    receiptData = receipt;
+    const status = document.getElementById("receipt-status");
+    if (status) {
+      status.textContent = "VERIFIED";
+      status.className = "border border-brand-green bg-background px-3 py-2 text-[10px] font-mono uppercase tracking-widest text-brand-green";
+    }
+
+    text("receipt-number", receipt.receipt_number);
+    text("receipt-issued-at", formatTimestamp(receipt.issued_at));
+    text("receipt-sponsor", receipt.sponsor_name);
+    text("receipt-email", receipt.sponsor_email || "EMAIL_NOT_PROVIDED");
+    text("receipt-recipient", receipt.recipient_name);
+    text("receipt-role", `${receipt.recipient_role} // ${receipt.recipient_location}`);
+    text("receipt-amount", formatMoney(receipt.amount, receipt.currency));
+    text("receipt-payment-status", receipt.status);
+    text("receipt-order-id", receipt.razorpay_order_id || "ORDER_ID_UNAVAILABLE");
+    text("receipt-payment-id", receipt.razorpay_payment_id);
+    text("receipt-message", receipt.message);
+
+    renderQr("receipt-qr", buildVerificationUrl(receipt));
+    document.getElementById("receipt-download")?.classList.remove("hidden");
+    document.getElementById("receipt-error")?.classList.add("hidden");
+    document.getElementById("receipt-details")?.classList.remove("hidden");
+  };
+
+  async function loadReceipt(): Promise<void> {
+    const token = new URLSearchParams(window.location.search).get("t")?.trim();
+    if (!token) {
+      showError();
+      return;
+    }
+
+    try {
+      const response = await fetch(apiUrl(`/api/payments/receipt/${encodeURIComponent(token)}`));
+      const envelope = await response.json();
+      if (!response.ok || !envelope?.success || !envelope.data) {
+        showError();
+        return;
+      }
+      showReceipt(envelope.data as ReceiptData);
+    } catch (error) {
+      console.error(error);
+      showError();
+    }
+  }
+
+  document.getElementById("receipt-download")?.addEventListener("click", () => {
+    if (receiptData) downloadReceiptPdf(receiptData);
+  });
+
+  void loadReceipt();
+</script>

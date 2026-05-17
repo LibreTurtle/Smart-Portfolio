@@ -5,6 +5,8 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"testing"
+
+	"github.com/google/uuid"
 )
 
 // ---------------------------------------------------------------------------
@@ -293,6 +295,45 @@ func TestTruncate_ZeroMaxLen(t *testing.T) {
 	expected := "..."
 	if result != expected {
 		t.Errorf("expected %q, got %q", expected, result)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// receipt token helpers
+// ---------------------------------------------------------------------------
+
+func TestReceiptToken_RoundTrip(t *testing.T) {
+	svc := &paymentService{keySecret: "receipt_secret"}
+	sponsorID := uuid.New()
+	token := svc.signReceiptToken(sponsorID, "pay_test123")
+
+	parsedID, err := svc.verifyReceiptToken(token)
+	if err != nil {
+		t.Fatalf("expected valid token, got error: %v", err)
+	}
+	if parsedID != sponsorID {
+		t.Fatalf("expected sponsor ID %s, got %s", sponsorID, parsedID)
+	}
+	if !svc.receiptTokenValid(token, sponsorID, "pay_test123") {
+		t.Fatal("expected token to validate for matching sponsor and payment")
+	}
+}
+
+func TestReceiptToken_TamperedPaymentFails(t *testing.T) {
+	svc := &paymentService{keySecret: "receipt_secret"}
+	sponsorID := uuid.New()
+	token := svc.signReceiptToken(sponsorID, "pay_test123")
+
+	if svc.receiptTokenValid(token, sponsorID, "pay_other") {
+		t.Fatal("expected token validation to fail for different payment ID")
+	}
+}
+
+func TestReceiptToken_DirectSponsorIDIsRejected(t *testing.T) {
+	svc := &paymentService{keySecret: "receipt_secret"}
+
+	if _, err := svc.verifyReceiptToken(uuid.New().String()); err == nil {
+		t.Fatal("expected raw sponsor ID to be rejected")
 	}
 }
 

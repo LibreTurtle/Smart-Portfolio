@@ -27,6 +27,7 @@ func (h *PaymentHandler) PaymentRoutes() chi.Router {
 	r := chi.NewRouter()
 	r.Post("/create-order", h.CreateOrder)
 	r.Post("/verify-payment", h.VerifyPayment)
+	r.Get("/receipt/{token}", h.GetReceipt)
 	return r
 }
 
@@ -88,6 +89,23 @@ func (h *PaymentHandler) VerifyPayment(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		httputil.WriteError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	httputil.WriteJSON(w, http.StatusOK, receipt)
+}
+
+// GetReceipt handles GET /api/payments/receipt/{token}.
+func (h *PaymentHandler) GetReceipt(w http.ResponseWriter, r *http.Request) {
+	token := strings.TrimSpace(chi.URLParam(r, "token"))
+	if token == "" {
+		httputil.WriteError(w, http.StatusNotFound, "receipt not found")
+		return
+	}
+
+	receipt, err := h.paymentService.GetReceiptByToken(r.Context(), token)
+	if err != nil {
+		httputil.WriteError(w, http.StatusNotFound, "receipt not found")
 		return
 	}
 

@@ -243,6 +243,7 @@ func sponsorModelToResponse(s paymentmodel.Sponsor) paymentdto.SponsorResponse {
 		Amount:            s.Amount,
 		Currency:          s.Currency,
 		Status:            s.Status,
+		RazorpayOrderID:   s.RazorpayOrderID,
 		RazorpayPaymentID: s.RazorpayPaymentID,
 		CreatedAt:         s.CreatedAt,
 	}

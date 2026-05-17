@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -49,6 +50,9 @@ type PaymentService interface {
 
 	// GetRecentSponsors fetches the top recent sponsors.
 	GetRecentSponsors(ctx context.Context) ([]model.Sponsor, error)
+
+	// GetReceiptByToken returns sponsorship details for a signed receipt token.
+	GetReceiptByToken(ctx context.Context, token string) (*dto.PaymentReceiptResponse, error)
 
 	// Ready returns true if the service is configured with the minimum
 	// required credentials to process payments and verify webhooks.
@@ -175,6 +179,7 @@ func (s *paymentService) HandlePaymentCaptured(ctx context.Context, payload []by
 			Payment struct {
 				Entity struct {
 					ID       string            `json:"id"` // e.g. "pay_xxxxx"
+					OrderID  string            `json:"order_id"`
 					Email    string            `json:"email"`
 					Currency string            `json:"currency"`
 					Amount   float64           `json:"amount"` // in paise
@@ -191,6 +196,7 @@ func (s *paymentService) HandlePaymentCaptured(ctx context.Context, payload []by
 	razorpayEventID := root.ID
 	entity := root.Payload.Payment.Entity
 	paymentID := entity.ID
+	orderID := strings.TrimSpace(entity.OrderID)
 	email := entity.Email
 	currency := entity.Currency
 
@@ -239,6 +245,7 @@ func (s *paymentService) HandlePaymentCaptured(ctx context.Context, payload []by
 		ctx,
 		razorpayEventID,
 		paymentID,
+		orderID,
 		name,
 		email,
 		amount,
@@ -387,19 +394,29 @@ func (s *paymentService) VerifyCheckoutPayment(ctx context.Context, req dto.Veri
 		currency = "INR"
 	}
 
-	if _, err := s.repo.ProcessSponsorshipTx(
+	sponsorID, err := s.repo.ProcessSponsorshipTx(
 		ctx,
 		"checkout:"+req.RazorpayPaymentID,
 		req.RazorpayPaymentID,
+		req.RazorpayOrderID,
 		sponsorName,
 		strings.TrimSpace(req.SponsorEmail),
 		req.Amount,
 		currency,
-	); err != nil {
+	)
+	if err != nil {
 		if isDuplicateKeyError(err) {
 			log.Info().
 				Str("payment_id", req.RazorpayPaymentID).
 				Msg("payment_service: checkout sponsorship already recorded")
+			existing, findErr := s.repo.FindSponsorByPaymentID(ctx, req.RazorpayPaymentID)
+			if findErr != nil {
+				return nil, fmt.Errorf("payment_service.VerifyCheckoutPayment: failed to load existing sponsor: %w", findErr)
+			}
+			if existing == nil {
+				return nil, fmt.Errorf("payment_service.VerifyCheckoutPayment: existing sponsor not found for payment")
+			}
+			sponsorID = existing.ID
 		} else {
 			return nil, fmt.Errorf("payment_service.VerifyCheckoutPayment: failed to record sponsor: %w", err)
 		}
@@ -407,6 +424,7 @@ func (s *paymentService) VerifyCheckoutPayment(ctx context.Context, req dto.Veri
 
 	return &dto.PaymentReceiptResponse{
 		ReceiptNumber:     "RCPT-" + strings.ToUpper(strings.TrimPrefix(req.RazorpayPaymentID, "pay_")),
+		ReceiptToken:      s.signReceiptToken(sponsorID, req.RazorpayPaymentID),
 		SponsorName:       sponsorName,
 		SponsorEmail:      strings.TrimSpace(req.SponsorEmail),
 		RecipientName:     "ZR Systems",
@@ -418,8 +436,31 @@ func (s *paymentService) VerifyCheckoutPayment(ctx context.Context, req dto.Veri
 		RazorpayOrderID:   req.RazorpayOrderID,
 		RazorpayPaymentID: req.RazorpayPaymentID,
 		IssuedAt:          time.Now().UTC(),
-		Message:           "Contribution received successfully. Thank you for sponsoring ZR Systems.",
+		Message:           "Thank you for your generous support. Your sponsorship helps keep the Smart Portfolio project maintained, improved, and available for future visitors. This receipt confirms your one-time contribution through Razorpay.",
 	}, nil
+}
+
+// GetReceiptByToken validates a signed QR receipt token and returns the sponsor
+// details tied to it. Sponsor IDs or payment IDs alone are never accepted.
+func (s *paymentService) GetReceiptByToken(ctx context.Context, token string) (*dto.PaymentReceiptResponse, error) {
+	sponsorID, err := s.verifyReceiptToken(token)
+	if err != nil {
+		return nil, err
+	}
+
+	sponsor, err := s.repo.FindSponsorByID(ctx, sponsorID)
+	if err != nil {
+		return nil, err
+	}
+	if sponsor == nil || sponsor.Status != "SUCCESS" {
+		return nil, fmt.Errorf("receipt not found")
+	}
+
+	if !s.receiptTokenValid(token, sponsor.ID, sponsor.RazorpayPaymentID) {
+		return nil, fmt.Errorf("invalid receipt token")
+	}
+
+	return s.receiptFromSponsor(*sponsor, token), nil
 }
 
 // GetRecentSponsors fetches the top 10 recent sponsors.
@@ -430,4 +471,61 @@ func (s *paymentService) GetRecentSponsors(ctx context.Context) ([]model.Sponsor
 // Ready returns true if KeyID and KeySecret are set.
 func (s *paymentService) Ready() bool {
 	return s.keyID != "" && s.keySecret != ""
+}
+
+func (s *paymentService) receiptFromSponsor(sponsor model.Sponsor, token string) *dto.PaymentReceiptResponse {
+	return &dto.PaymentReceiptResponse{
+		ReceiptNumber:     "RCPT-" + strings.ToUpper(strings.TrimPrefix(sponsor.RazorpayPaymentID, "pay_")),
+		ReceiptToken:      token,
+		SponsorName:       sponsor.SponsorName,
+		SponsorEmail:      sponsor.Email,
+		RecipientName:     "ZR Systems",
+		RecipientRole:     "Backend Developer",
+		RecipientLocation: "Remote India",
+		Amount:            sponsor.Amount,
+		Currency:          sponsor.Currency,
+		Status:            sponsor.Status,
+		RazorpayOrderID:   sponsor.RazorpayOrderID,
+		RazorpayPaymentID: sponsor.RazorpayPaymentID,
+		IssuedAt:          sponsor.CreatedAt.UTC(),
+		Message:           "Thank you for your generous support. Your sponsorship helps keep the Smart Portfolio project maintained, improved, and available for future visitors. This receipt confirms your one-time contribution through Razorpay.",
+	}
+}
+
+func (s *paymentService) signReceiptToken(sponsorID uuid.UUID, paymentID string) string {
+	sponsorPart := base64.RawURLEncoding.EncodeToString(sponsorID[:])
+	mac := hmac.New(sha256.New, []byte(s.keySecret))
+	mac.Write([]byte("receipt:v1:"))
+	mac.Write([]byte(sponsorPart))
+	mac.Write([]byte(":"))
+	mac.Write([]byte(paymentID))
+	signature := base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
+	return "v1." + sponsorPart + "." + signature
+}
+
+func (s *paymentService) verifyReceiptToken(token string) (uuid.UUID, error) {
+	if s.keySecret == "" {
+		return uuid.Nil, fmt.Errorf("receipt verification is not configured")
+	}
+
+	parts := strings.Split(strings.TrimSpace(token), ".")
+	if len(parts) != 3 || parts[0] != "v1" || parts[1] == "" || parts[2] == "" {
+		return uuid.Nil, fmt.Errorf("invalid receipt token")
+	}
+
+	sponsorBytes, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		return uuid.Nil, fmt.Errorf("invalid receipt token")
+	}
+	sponsorID, err := uuid.FromBytes(sponsorBytes)
+	if err != nil {
+		return uuid.Nil, fmt.Errorf("invalid receipt token")
+	}
+
+	return sponsorID, nil
+}
+
+func (s *paymentService) receiptTokenValid(token string, sponsorID uuid.UUID, paymentID string) bool {
+	expected := s.signReceiptToken(sponsorID, paymentID)
+	return hmac.Equal([]byte(expected), []byte(strings.TrimSpace(token)))
 }

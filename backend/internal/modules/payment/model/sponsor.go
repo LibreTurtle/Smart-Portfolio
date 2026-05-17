@@ -15,6 +15,7 @@ type Sponsor struct {
 	Amount            float64   `json:"amount"`
 	Currency          string    `json:"currency"`
 	Status            string    `json:"status"`
+	RazorpayOrderID   string    `json:"razorpay_order_id"`
 	RazorpayPaymentID string    `json:"razorpay_payment_id"`
 	CreatedAt         time.Time `json:"created_at"`
 }

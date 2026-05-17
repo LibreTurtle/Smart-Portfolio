@@ -85,6 +85,7 @@ func hasAtMostTwoDecimals(value float64) bool {
 // PaymentReceiptResponse is returned after checkout verification succeeds.
 type PaymentReceiptResponse struct {
 	ReceiptNumber     string    `json:"receipt_number"`
+	ReceiptToken      string    `json:"receipt_token,omitempty"`
 	SponsorName       string    `json:"sponsor_name"`
 	SponsorEmail      string    `json:"sponsor_email,omitempty"`
 	RecipientName     string    `json:"recipient_name"`
@@ -107,6 +108,7 @@ type SponsorResponse struct {
 	Amount            float64   `json:"amount"`
 	Currency          string    `json:"currency"`
 	Status            string    `json:"status"`
+	RazorpayOrderID   string    `json:"razorpay_order_id"`
 	RazorpayPaymentID string    `json:"razorpay_payment_id"`
 	CreatedAt         time.Time `json:"created_at"`
 }

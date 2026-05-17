@@ -35,6 +35,7 @@ func NewPaymentRepository(pool *pgxpool.Pool) *PaymentRepository {
 //     used as the outbox event_id to achieve idempotency (duplicate webhooks
 //     are rejected by the UNIQUE constraint on event_id).
 //   - paymentID: the Razorpay payment ID (pay_xxxxx).
+//   - orderID: the Razorpay order ID (order_xxxxx), when available.
 //   - name: sponsor display name extracted from the payment notes.
 //   - email: sponsor email from the payment entity.
 //   - amount: payment amount in the major currency unit (e.g. INR, not paise).
@@ -45,6 +46,7 @@ func (r *PaymentRepository) ProcessSponsorshipTx(
 	ctx context.Context,
 	razorpayEventID string,
 	paymentID string,
+	orderID string,
 	name string,
 	email string,
 	amount float64,
@@ -61,8 +63,8 @@ func (r *PaymentRepository) ProcessSponsorshipTx(
 
 	// ── Insert sponsor ──────────────────────────────────────────────────
 	const insertSponsorSQL = `
-		INSERT INTO sponsors (sponsor_name, email, amount, currency, status, razorpay_payment_id)
-		VALUES ($1, $2, $3, $4, 'SUCCESS', $5)
+		INSERT INTO sponsors (sponsor_name, email, amount, currency, status, razorpay_payment_id, razorpay_order_id)
+		VALUES ($1, $2, $3, $4, 'SUCCESS', $5, $6)
 		RETURNING id
 	`
 
@@ -73,6 +75,7 @@ func (r *PaymentRepository) ProcessSponsorshipTx(
 		amount,
 		currency,
 		paymentID,
+		orderID,
 	).Scan(&sponsorID)
 	if err != nil {
 		return uuid.Nil, fmt.Errorf("payment_repo.ProcessSponsorshipTx: sponsor insert failed: %w", err)
@@ -190,7 +193,7 @@ func (r *PaymentRepository) MarkOutboxEventProcessed(ctx context.Context, eventI
 // Returns nil and no error if no sponsor is found.
 func (r *PaymentRepository) FindSponsorByPaymentID(ctx context.Context, paymentID string) (*model.Sponsor, error) {
 	const query = `
-		SELECT id, sponsor_name, email, amount, currency, status, razorpay_payment_id, created_at
+		SELECT id, sponsor_name, email, amount, currency, status, COALESCE(razorpay_order_id, ''), razorpay_payment_id, created_at
 		FROM sponsors
 		WHERE razorpay_payment_id = $1
 	`
@@ -203,6 +206,7 @@ func (r *PaymentRepository) FindSponsorByPaymentID(ctx context.Context, paymentI
 		&s.Amount,
 		&s.Currency,
 		&s.Status,
+		&s.RazorpayOrderID,
 		&s.RazorpayPaymentID,
 		&s.CreatedAt,
 	)
@@ -216,11 +220,42 @@ func (r *PaymentRepository) FindSponsorByPaymentID(ctx context.Context, paymentI
 	return &s, nil
 }
 
+// FindSponsorByID looks up a sponsor by the internal sponsor UUID.
+// Returns nil and no error if no sponsor is found.
+func (r *PaymentRepository) FindSponsorByID(ctx context.Context, sponsorID uuid.UUID) (*model.Sponsor, error) {
+	const query = `
+		SELECT id, sponsor_name, email, amount, currency, status, COALESCE(razorpay_order_id, ''), razorpay_payment_id, created_at
+		FROM sponsors
+		WHERE id = $1
+	`
+
+	var s model.Sponsor
+	err := r.pool.QueryRow(ctx, query, sponsorID).Scan(
+		&s.ID,
+		&s.SponsorName,
+		&s.Email,
+		&s.Amount,
+		&s.Currency,
+		&s.Status,
+		&s.RazorpayOrderID,
+		&s.RazorpayPaymentID,
+		&s.CreatedAt,
+	)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("payment_repo.FindSponsorByID: query failed: %w", err)
+	}
+
+	return &s, nil
+}
+
 // FindAllSponsors returns every sponsor row ordered by creation date descending.
 // Intended for admin dashboard use.
 func (r *PaymentRepository) FindAllSponsors(ctx context.Context) ([]model.Sponsor, error) {
 	const query = `
-		SELECT id, sponsor_name, email, amount, currency, status, razorpay_payment_id, created_at
+		SELECT id, sponsor_name, email, amount, currency, status, COALESCE(razorpay_order_id, ''), razorpay_payment_id, created_at
 		FROM sponsors
 		ORDER BY created_at DESC
 	`
@@ -241,6 +276,7 @@ func (r *PaymentRepository) FindAllSponsors(ctx context.Context) ([]model.Sponso
 			&s.Amount,
 			&s.Currency,
 			&s.Status,
+			&s.RazorpayOrderID,
 			&s.RazorpayPaymentID,
 			&s.CreatedAt,
 		); err != nil {
@@ -260,7 +296,7 @@ func (r *PaymentRepository) FindAllSponsors(ctx context.Context) ([]model.Sponso
 // Intended for public view.
 func (r *PaymentRepository) FindRecentSponsors(ctx context.Context, limit int) ([]model.Sponsor, error) {
 	const query = `
-		SELECT id, sponsor_name, email, amount, currency, status, razorpay_payment_id, created_at
+		SELECT id, sponsor_name, email, amount, currency, status, COALESCE(razorpay_order_id, ''), razorpay_payment_id, created_at
 		FROM sponsors
 		WHERE status = 'SUCCESS'
 		ORDER BY created_at DESC
@@ -283,6 +319,7 @@ func (r *PaymentRepository) FindRecentSponsors(ctx context.Context, limit int) (
 			&s.Amount,
 			&s.Currency,
 			&s.Status,
+			&s.RazorpayOrderID,
 			&s.RazorpayPaymentID,
 			&s.CreatedAt,
 		); err != nil {
